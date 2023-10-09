@@ -205,6 +205,7 @@ if __name__ == "__main__":
             current_frame
         )
         h = np.zeros(len(candidate_centroids))
+        detected_bboxes = [[] for _ in range(len(candidate_centroids))]
 
         # 3. Check for object centroids in neighborhood in next frames
         for next_frame in next_frames:
@@ -233,15 +234,15 @@ if __name__ == "__main__":
             for i, j in zip(row_ind, col_ind):
                 if cost_matrix[i, j] < float("inf"):
                     h[i] += 1
-                    candidate_bboxes[i] = next_candidate_bboxes[j]
-                    candidate_centroids[i] = next_candidate_centroids[j]
+                    detected_bboxes[i].append(next_candidate_bboxes[j])
 
-        # 4. Check object occurences
         for i, occurence in enumerate(h):
             if occurence >= H:
                 final_bboxes.append(candidate_bboxes[i])
             elif 3 <= occurence <= 4:
-                final_bboxes.append(candidate_bboxes[i])
+                # Calculate the average position of the detected bounding box
+                avg_bbox = np.mean(detected_bboxes[i], axis=0).astype(int)
+                final_bboxes.append(tuple(avg_bbox))
         
         with open("./processing/output.csv", 'a', newline='') as csvfile:
             write = csv.DictWriter(csvfile, fieldnames=fieldnames)
