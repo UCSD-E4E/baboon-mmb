@@ -152,102 +152,15 @@ if __name__ == "__main__":
 
         return images
 
-    def get_blob_centroids_and_boxes(binary_img):
-        # Find contours in the binary images
-        contours, _ = cv2.findContours(
-            binary_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        centroids = []
-        bounding_boxes = []
-
-        for contour in contours:
-            # Calculate bounding box for each contour
-            x, y, w, h = cv2.boundingRect(contour)
-            bounding_boxes.append((x, y, w, h))
-
-            # Caclulate centroid for each contour
-            M = cv2.moments(contour)
-            if M["m00"] != 0:
-                c_x = int(M["m10"] / M["m00"])
-                c_y = int(M["m01"] / M["m00"])
-                centroids.append((c_x, c_y))
-            else:
-                c_x, c_y = 0, 0
-
-            centroids.append((c_x, c_y))
-
-        return centroids, bounding_boxes
-
     amfd_images = read_images_from_directory("processing/amfd")
-    lrmc_images = read_images_from_directory("processing/lrmc")
+    lrmc_images = read_images_from_directory("processing/amfd")
 
     merged_images = [
         cv2.bitwise_or(amfd_image, lrmc_image)
         for amfd_image, lrmc_image in zip(amfd_images, lrmc_images)
     ]
 
-    frame_count = 1
+    # The rest of the pipeline filter that was here was bad and didn't so it was removed.
+    # Needs to be rewritten.
+    # Should output a csv file of the bounding boxes of the targets in each frame.
 
-    with open("./processing/output.csv", 'w', newline='') as csvfile:
-        fieldnames = ['frame', 'x', 'y', 'w', 'h']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-    for idx in range(len(merged_images) - PIPELINE_LENGTH):
-        final_bboxes = []
-
-        current_frame = merged_images[idx]
-        next_frames = merged_images[idx + 1 : idx + PIPELINE_LENGTH + 1]
-
-        # 2. Identify candidate target points (centroids) and their bounding boxes
-        candidate_centroids, candidate_bboxes = get_blob_centroids_and_boxes(
-            current_frame
-        )
-        h = np.zeros(len(candidate_centroids))
-        detected_bboxes = [[] for _ in range(len(candidate_centroids))]
-
-        # 3. Check for object centroids in neighborhood in next frames
-        for next_frame in next_frames:
-            (
-                next_candidate_centroids,
-                next_candidate_bboxes,
-            ) = get_blob_centroids_and_boxes(next_frame)
-            cost_matrix = np.zeros(
-                (len(candidate_centroids), len(next_candidate_centroids))
-            )
-
-            for i, current_centroid in enumerate(candidate_centroids):
-                for j, next_centroid in enumerate(next_candidate_centroids):
-                    s_x = abs(current_centroid[0] - next_centroid[0])  # Eq. 11
-                    s_y = abs(current_centroid[1] - next_centroid[1])  # Eq. 12
-
-                    if 0 < s_x < PIPELINE_SIZE and 0 < s_y < PIPELINE_SIZE:  # Eq. 10
-                        cost_matrix[i, j] = np.sqrt(s_x**2 + s_y**2)
-                    else:
-                        cost_matrix[i, j] = float("inf")
-
-            # Use Hungarian algorithm to find the optimal assignment
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-
-            # Increase h for matched points and update the bounding box and centroid
-            for i, j in zip(row_ind, col_ind):
-                if cost_matrix[i, j] < float("inf"):
-                    h[i] += 1
-                    detected_bboxes[i].append(next_candidate_bboxes[j])
-
-        for i, occurence in enumerate(h):
-            if occurence >= H:
-                final_bboxes.append(candidate_bboxes[i])
-            elif 3 <= occurence <= 4:
-                # Calculate the average position of the detected bounding box
-                avg_bbox = np.mean(detected_bboxes[i], axis=0).astype(int)
-                final_bboxes.append(tuple(avg_bbox))
-        
-        with open("./processing/output.csv", 'a', newline='') as csvfile:
-            write = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            for bbox in final_bboxes:
-                x, y, w, h = bbox
-                write.writerow({'frame': frame_count, 'x': x, 'y': y, 'w': w, 'h': h})
-
-        frame_count += 1
