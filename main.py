@@ -182,119 +182,122 @@ if __name__ == "__main__":
 
         return centers, bboxes
 
-    cached_centers = []
-    cached_bboxes = []
-    check_cache = False
-    for current_image_index in range(len(merged_images) - PIPELINE_LENGTH):
-        # Step 2: We then perform PF starting from the first frame and its successive 5 frames.
-        # We take the first image as the current frame and identify all candidate target points Pm(m=1,2,3,...) in those images.
-        centers = []
-        bboxes = []
-        if check_cache:
-            for centers in cached_centers:
-                centers.append(cached_centers)
-            for bboxes in cached_bboxes:
-                bboxes.append(cached_bboxes)
-            
-            last_pf_length_centers, last_pf_length_bboxes = find_centers_and_bboxes(merged_images[current_image_index + PIPELINE_LENGTH])
-            centers.append(last_pf_length_centers)
-            bboxes.append(last_pf_length_bboxes)
-        else:
-            for next_frame_relative_index in range(PIPELINE_LENGTH + 1):
-                centers_j, bboxes_j = find_centers_and_bboxes(merged_images[current_image_index + next_frame_relative_index])
-                centers.append(centers_j)
-                bboxes.append(bboxes_j)
+    gravestone = (-1, [(-1, -1)])
+    objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)] 
 
-        object_occurences_in_frames = np.zeros((len(centers[0]), PIPELINE_LENGTH))
-        lookup = []
-        for next_frame_index in range(1, PIPELINE_LENGTH+1):
-            Cab = np.zeros((len(centers[0]), len(centers[next_frame_index])))
-            for a in centers[0]:
-                for b in centers[next_frame_index]:
-                    SabX = abs(a[0] - b[0])
-                    SabY = abs(a[1] - b[1])
+    for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
+        for i, (frame_objs) in enumerate(objects):
+            if frame_objs == gravestone:
+                centers_frame, bboxes_frame = find_centers_and_bboxes(merged_images[abs_current_image_idx + i])
+                objects[i] = list(zip(centers_frame, bboxes_frame))
+
+        current_frame_obj_to_next_frame_obj_lookup = []
+        next_frames_obj_corresponences = np.zeros((len(objects[0]), PIPELINE_LENGTH))
+        for rel_next_frame_idx in range(1, PIPELINE_LENGTH + 1):
+            cost_matrix = np.zeros((len(objects[0]), len(objects[rel_next_frame_idx])))
+            for a, (point_a, _) in enumerate(objects[0]):
+                for b, (point_b, _) in enumerate(objects[rel_next_frame_idx]):
+                    SabX = abs(point_a[0] - point_b[0])
+                    SabY = abs(point_a[1] - point_b[1])
                     if 0 < SabX < PIPELINE_SIZE and 0 < SabY < PIPELINE_SIZE:
-                        Cab[centers[0].index(a)][centers[next_frame_index].index(b)] = 1
+                        cost_matrix[a, b] = 1
 
-            row_ind, col_ind = linear_sum_assignment(Cab, maximize=True)
+            row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
+            optimal_correspondences = list(zip(row_ind, col_ind))
+            current_frame_obj_to_next_frame_obj_lookup.append(optimal_correspondences)
+            for a, b in optimal_correspondences:
+                next_frames_obj_corresponences[a][rel_next_frame_idx - 1] = 1
 
-            linear_sum_assignment_result = list(zip(row_ind, col_ind))
-            lookup.append(linear_sum_assignment_result)
-            for result in linear_sum_assignment_result:
-                object_occurences_in_frames[result[0]][next_frame_index] = 1
-
-        for current_frame_center_index in range(len(centers[0])):
-            object_occurences_in_frames_sum = sum(object_occurences_in_frames[current_frame_center_index])
-            if object_occurences_in_frames_sum > H:
+        for current_frame_current_center_idx in range(len(objects[0])):
+            if (
+                sum(next_frames_obj_corresponences[current_frame_current_center_idx])
+                > H
+            ):
                 pointline = [None for _ in range(PIPELINE_LENGTH + 1)]
-                pointline[0] = centers[0][current_frame_center_index]
-                for next_frame_relative_index in range(PIPELINE_LENGTH):
-                    next_point_index = None
-                    for result in lookup[j]:
-                        if result[0] == current_frame_center_index:
-                            next_point_index = result[1]
-                            break
+                pointline[0] = objects[0][current_frame_current_center_idx]
 
-                    if next_point_index is not None:
-                        pointline[next_frame_relative_index + 1] = centers[next_frame_relative_index + 1][next_point_index]
+                for rel_next_frame_idx, results in enumerate(
+                    current_frame_obj_to_next_frame_obj_lookup
+                ):
+                    next_center_idx = next(
+                        (
+                            b
+                            for a, b in results
+                            if a == current_frame_current_center_idx
+                        ),
+                        None,
+                    )
+                    if next_center_idx is not None:
+                        pointline[rel_next_frame_idx + 1] = objects[
+                            rel_next_frame_idx + 1
+                        ][next_center_idx]
 
-                # Fill in the missing points
-                for next_frame_relative_index in range(PIPELINE_LENGTH - 1):
-                    if pointline[next_frame_relative_index] is None:
-                        next_non_none_index = None
-                        for future_point_index in range(next_frame_relative_index + 1, PIPELINE_LENGTH + 1):
-                            if pointline[future_point_index] is not None:
-                                next_non_none_index = future_point_index
-                                break
-                    
-                        prev_non_none_index = None
-                        for prev_point_index in range(next_frame_relative_index - 1, -1, -1):
-                            if pointline[prev_non_none_index] is not None:
-                                prev_non_none_index = prev_non_none_index
-                                break
+                for rel_all_frame_idx in range(1, PIPELINE_LENGTH - 1):
+                    if pointline[rel_all_frame_idx] is None:
+                        next_non_none_index = next(
+                            (
+                                i
+                                for i, v in enumerate(
+                                    pointline[rel_all_frame_idx + 1 :],
+                                    start=rel_all_frame_idx + 1,
+                                )
+                                if v is not None
+                            ),
+                            None,
+                        )
+                        prev_non_none_index = next(
+                            i
+                            for i, v in enumerate(
+                                reversed(pointline[:rel_all_frame_idx])
+                            )
+                            if v is not None
+                        )
 
                         if next_non_none_index is None:
-                            pointline[next_frame_relative_index] = pointline[prev_non_none_index]
+                            pointline[rel_all_frame_idx] = pointline[
+                                prev_non_none_index
+                            ]
+                            objects[rel_all_frame_idx].append(
+                                pointline[prev_non_none_index]
+                            )
                         else:
-                            x0, y0 = pointline[prev_non_none_index]
-                            x1, y1 = pointline[next_non_none_index]
-                            delta_x = x1 - x0 / (next_non_none_index - prev_non_none_index + 1)
-                            delta_y = y1 - y0 / (next_non_none_index - prev_non_none_index + 1)
-                            pointline[next_frame_relative_index] = (x0 + delta_x, y0 + delta_y)
-                            centers[next_frame_relative_index + 1].append(pointline[next_frame_relative_index])
-                            bboxes[next_frame_relative_index + 1].append(bboxes[0][current_frame_center_index])
+                            x0, y0 = pointline[prev_non_none_index][0]
+                            x1, y1 = pointline[next_non_none_index][0]
+                            delta_x = (x1 - x0) / (
+                                next_non_none_index - prev_non_none_index + 1
+                            )
+                            delta_y = (y1 - y0) / (
+                                next_non_none_index - prev_non_none_index + 1
+                            )
+                            interpolated_center = (
+                                int(x0 + delta_x),
+                                int(y0 + delta_y),
+                            )
+                            interpolated_bbox = objects[0][
+                                current_frame_current_center_idx
+                            ][1]
+
+                            pointline[rel_all_frame_idx] = (
+                                interpolated_center,
+                                interpolated_bbox,
+                            )
+                            objects[rel_all_frame_idx].append(
+                                pointline[rel_all_frame_idx]
+                            )
             else:
-                centers[0][current_frame_center_index] = None
-                bboxes[0][current_frame_center_index] = None
-
-        colored_image = cv2.cvtColor(merged_images[current_image_index], cv2.COLOR_GRAY2BGR)
-        for center in centers[0]:
-            if center is not None:
-                cv2.circle(colored_image, center, 3, (0, 255, 0), -1)
-
-        for bbox in bboxes[0]:
-            if bbox is not None:
+                objects[0][current_frame_current_center_idx] = (None, None)
+        
+        color_image = cv2.imread(f"processing/frames/{abs_current_image_idx + 1}.bmp")
+        for center, bbox in objects[0]:
+            if center is not None and bbox is not None:
                 x, y, w, h = bbox
-                cv2.rectangle(colored_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
-
-        cv2.imshow("Pipeline Filter", colored_image)
+                cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        
+        cv2.imshow("Pipeline Filter", color_image)
         cv2.waitKey(30)
 
-        check_cache = True
-        centers.pop(0)
-        bboxes.pop(0)
-        cached_bboxes = []
-        cached_centers = []
-        cached_centers = centers
-        cached_bboxes = bboxes
-
-
-                        
-                        
-
-
-
-
-
+        for i in range(PIPELINE_LENGTH):
+            objects[i] = objects[i + 1]
         
+        objects[PIPELINE_LENGTH] = gravestone
 
