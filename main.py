@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import os
 import csv
+import shutil
 
 from scipy.optimize import linear_sum_assignment
 
@@ -20,113 +21,113 @@ if __name__ == "__main__":
     PIPELINE_LENGTH = 5  # Step 1 of Pipeline Filter in MMB paper
     PIPELINE_SIZE = 7  # Step 1 of Pipeline Filter in MMB paper
     H = 3  # Step 4 of Pipeline Filter in MMB paper
-    # if len(sys.argv) < 2:
-    #     print(f"Usage: {sys.argv[0]} <video file>")
-    #     sys.exit(1)
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <video file>")
+        sys.exit(1)
 
-    # video_file = sys.argv[1]
+    video_file = sys.argv[1]
 
-    # cap = cv2.VideoCapture(video_file)
-    # if not cap.isOpened():
-    #     print(f"Unable to open video: {video_file}")
-    #     sys.exit(1)
+    cap = cv2.VideoCapture(video_file)
+    if not cap.isOpened():
+        print(f"Unable to open video: {video_file}")
+        sys.exit(1)
 
-    # if not os.path.exists("processing/amfd"):
-    #     os.makedirs("processing/amfd")
-    # if not os.path.exists("processing/frames"):
-    #     os.makedirs("processing/frames")
+    if not os.path.exists("processing/amfd"):
+        os.makedirs("processing/amfd")
+    if not os.path.exists("processing/frames"):
+        os.makedirs("processing/frames")
 
-    # frame_count = 1
+    frame_count = 1
 
-    # height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    # width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-    # """
-    # # Step 1: Accumulative Multiframe Differencing
-    # """
-    # _, I_t_minus_1 = cap.read()
-    # _, I_t = cap.read()
+    """
+    # Step 1: Accumulative Multiframe Differencing
+    """
+    _, I_t_minus_1 = cap.read()
+    _, I_t = cap.read()
 
-    # cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t_minus_1)
-    # cv2.imwrite(
-    #     f"processing/amfd/{frame_count}.bmp", np.zeros((height, width, 3), np.uint8)
-    # )
+    cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t_minus_1)
+    cv2.imwrite(
+        f"processing/amfd/{frame_count}.bmp", np.zeros((height, width, 3), np.uint8)
+    )
 
-    # while True:
-    #     frame_count += 1
-    #     ret, I_t_plus_1 = cap.read()
+    while True:
+        frame_count += 1
+        ret, I_t_plus_1 = cap.read()
 
-    #     if not ret:
-    #         cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
-    #         cv2.imwrite(
-    #             f"processing/amfd/{frame_count}.bmp",
-    #             np.zeros((height, width, 3), np.uint8),
-    #         )
-    #         break
+        if not ret:
+            cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
+            cv2.imwrite(
+                f"processing/amfd/{frame_count}.bmp",
+                np.zeros((height, width, 3), np.uint8),
+            )
+            break
 
-    #     # Calculate the differencing images Dt1, Dt2, Dt3
-    #     # Dt1 = |It - It-1| (Eq. 1 in MMB paper)
-    #     Dt1 = cv2.absdiff(I_t, I_t_minus_1)
-    #     # Dt2 = |It+1 - It-1| (Eq. 2 in MMB paper)
-    #     Dt2 = cv2.absdiff(I_t_plus_1, I_t_minus_1)
-    #     # Dt3 = |It+1 - It| (Eq. 3 in MMB paper)
-    #     Dt3 = cv2.absdiff(I_t_plus_1, I_t)
+        # Calculate the differencing images Dt1, Dt2, Dt3
+        # Dt1 = |It - It-1| (Eq. 1 in MMB paper)
+        Dt1 = cv2.absdiff(I_t, I_t_minus_1)
+        # Dt2 = |It+1 - It-1| (Eq. 2 in MMB paper)
+        Dt2 = cv2.absdiff(I_t_plus_1, I_t_minus_1)
+        # Dt3 = |It+1 - It| (Eq. 3 in MMB paper)
+        Dt3 = cv2.absdiff(I_t_plus_1, I_t)
 
-    #     # Calculate the accumulative response image Id
-    #     # Id = (Dt1 + Dt2 + Dt3) / 3 (Eq. 4 in MMB paper)
-    #     Id = (Dt1 + Dt2 + Dt3) / 3
-    #     Id_gray = cv2.cvtColor(Id.astype(np.uint8), cv2.COLOR_BGR2GRAY)
+        # Calculate the accumulative response image Id
+        # Id = (Dt1 + Dt2 + Dt3) / 3 (Eq. 4 in MMB paper)
+        Id = (Dt1 + Dt2 + Dt3) / 3
+        Id_gray = cv2.cvtColor(Id.astype(np.uint8), cv2.COLOR_BGR2GRAY)
 
-    #     # Calculate the threshold T to extract targets
-    #     mean_val, std_val = cv2.meanStdDev(Id_gray)
-    #     # T = mean + k + std (Eq. 6 in MMB paper)
-    #     T = mean_val[0][0] + K * std_val[0][0]
+        # Calculate the threshold T to extract targets
+        mean_val, std_val = cv2.meanStdDev(Id_gray)
+        # T = mean + k + std (Eq. 6 in MMB paper)
+        T = mean_val[0][0] + K * std_val[0][0]
 
-    #     # Convert the accumulative response image to a binary image
-    #     # Id(x, y) = 255 if Id(x, y) >= T, 0 otherwise (Eq. 5 in MMB paper
-    #     _, binary_image = cv2.threshold(Id_gray, T, 255, cv2.THRESH_BINARY)
+        # Convert the accumulative response image to a binary image
+        # Id(x, y) = 255 if Id(x, y) >= T, 0 otherwise (Eq. 5 in MMB paper
+        _, binary_image = cv2.threshold(Id_gray, T, 255, cv2.THRESH_BINARY)
 
-    #     # Perform morphological operations on binary image
-    #     binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, KERNAL)
+        # Perform morphological operations on binary image
+        binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, KERNAL)
 
-    #     # Remove false alarms
-    #     # Connected area  must satisfy the following conditions:
-    #     # 1. Area must be between AREA_MIN and AREA_MAX
-    #     # 2. Aspect ratio must be between ASPECT_RATIO_MIN and ASPECT_RATIO_MAX (Eq. 7 in MMB paper)
-    #     # Compute connected components
-    #     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-    #         binary_image, connectivity=CONNECTIVITY
-    #     )
+        # Remove false alarms
+        # Connected area  must satisfy the following conditions:
+        # 1. Area must be between AREA_MIN and AREA_MAX
+        # 2. Aspect ratio must be between ASPECT_RATIO_MIN and ASPECT_RATIO_MAX (Eq. 7 in MMB paper)
+        # Compute connected components
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            binary_image, connectivity=CONNECTIVITY
+        )
 
-    #     # Iterate through each component and check the area and aspect ratio
-    #     for i in range(1, num_labels):  # Start from 1 to ignore the background
-    #         x, y, w, h, area = stats[i]
-    #         aspect_ratio = float(w) / h
+        # Iterate through each component and check the area and aspect ratio
+        for i in range(1, num_labels):  # Start from 1 to ignore the background
+            x, y, w, h, area = stats[i]
+            aspect_ratio = float(w) / h
 
-    #         if (
-    #             area < AREA_MIN
-    #             or area > AREA_MAX
-    #             or aspect_ratio < ASPECT_RATIO_MIN
-    #             or aspect_ratio > ASPECT_RATIO_MAX
-    #         ):
-    #             # Create a mask for the current component
-    #             mask = (labels == i).astype(np.uint8) * 255
-    #             # Subtract the mask from the binary image to remove the component
-    #             binary_image = cv2.subtract(binary_image, mask)
+            if (
+                area < AREA_MIN
+                or area > AREA_MAX
+                or aspect_ratio < ASPECT_RATIO_MIN
+                or aspect_ratio > ASPECT_RATIO_MAX
+            ):
+                # Create a mask for the current component
+                mask = (labels == i).astype(np.uint8) * 255
+                # Subtract the mask from the binary image to remove the component
+                binary_image = cv2.subtract(binary_image, mask)
 
-    #     cv2.imshow("Binary Image", binary_image)
-    #     cv2.waitKey(30)
+        cv2.imshow("Binary Image", binary_image)
+        cv2.waitKey(30)
 
-    #     binary_image = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2BGR)
-    #     cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
-    #     cv2.imwrite(f"processing/amfd/{frame_count}.bmp", binary_image)
+        binary_image = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2BGR)
+        cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
+        cv2.imwrite(f"processing/amfd/{frame_count}.bmp", binary_image)
 
-    #     I_t_minus_1 = I_t
-    #     I_t = I_t_plus_1
+        I_t_minus_1 = I_t
+        I_t = I_t_plus_1
 
-    # cap.release()
+    cap.release()
 
-    # cv2.destroyAllWindows()
+    cv2.destroyAllWindows()
     """
     Step 2 TODO: Figure out a way to call the Demo_fRMC.m script from Python
     """
@@ -184,6 +185,10 @@ if __name__ == "__main__":
 
     gravestone = (-1, [(-1, -1)])
     objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)]
+
+    with open('output.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=',')
+        writer.writerow(['frame #', 'i', 'j', 'x', 'y', 'w', 'h'])
 
     for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
         for i, (frame_objs) in enumerate(objects):
@@ -316,8 +321,13 @@ if __name__ == "__main__":
         color_image = cv2.imread(f"processing/frames/{abs_current_image_idx + 1}.bmp")
         for center, bbox in objects[0]:
             if center is not None and bbox is not None:
+                i, j = center
                 x, y, w, h = bbox
                 cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+                # write to csv
+                with open('output.csv', 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile, delimiter=',')
+                    writer.writerow([abs_current_image_idx, i, j, x, y, w, h])
 
         cv2.imshow("Pipeline Filter", color_image)
         cv2.waitKey(30)
@@ -326,3 +336,10 @@ if __name__ == "__main__":
             objects[i] = objects[i + 1]
 
         objects[PIPELINE_LENGTH] = gravestone
+
+    
+    cv2.destroyAllWindows()
+    csvfile.close()
+
+    shutil.rmtree("processing")
+
