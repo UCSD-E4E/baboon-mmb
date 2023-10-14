@@ -183,12 +183,14 @@ if __name__ == "__main__":
         return centers, bboxes
 
     gravestone = (-1, [(-1, -1)])
-    objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)] 
+    objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)]
 
     for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
         for i, (frame_objs) in enumerate(objects):
             if frame_objs == gravestone:
-                centers_frame, bboxes_frame = find_centers_and_bboxes(merged_images[abs_current_image_idx + i])
+                centers_frame, bboxes_frame = find_centers_and_bboxes(
+                    merged_images[abs_current_image_idx + i]
+                )
                 objects[i] = list(zip(centers_frame, bboxes_frame))
 
         current_frame_obj_to_next_frame_obj_lookup = []
@@ -232,7 +234,7 @@ if __name__ == "__main__":
                             rel_next_frame_idx + 1
                         ][next_center_idx]
 
-                for rel_all_frame_idx in range(1, PIPELINE_LENGTH - 1):
+                for rel_all_frame_idx in range(1, PIPELINE_LENGTH):
                     if pointline[rel_all_frame_idx] is None:
                         next_non_none_index = next(
                             (
@@ -254,12 +256,33 @@ if __name__ == "__main__":
                         )
 
                         if next_non_none_index is None:
-                            pointline[rel_all_frame_idx] = pointline[
-                                prev_non_none_index
-                            ]
-                            objects[rel_all_frame_idx].append(
-                                pointline[prev_non_none_index]
-                            )
+                            if prev_non_none_index > 0:
+                                x_prev, y_prev = pointline[prev_non_none_index - 1][0]
+                                x_cur, y_cur = pointline[prev_non_none_index][0]
+                                delta_x = x_cur - x_prev
+                                delta_y = y_cur - y_prev
+                                extrapolated_center = (
+                                    int(x_cur + delta_x),
+                                    int(y_cur + delta_y),
+                                )
+
+                                bbox_prev = pointline[prev_non_none_index - 1][1]
+                                bbox_cur = pointline[prev_non_none_index][1]
+                                delta_bbox = [
+                                    cur - prev for cur, prev in zip(bbox_cur, bbox_prev)
+                                ]
+                                extrapolated_bbox = [
+                                    int(cur + delta)
+                                    for cur, delta in zip(bbox_cur, delta_bbox)
+                                ]
+
+                                pointline[rel_all_frame_idx] = (
+                                    extrapolated_center,
+                                    extrapolated_bbox,
+                                )
+                                objects[rel_all_frame_idx].append(
+                                    pointline[rel_all_frame_idx]
+                                )
                         else:
                             x0, y0 = pointline[prev_non_none_index][0]
                             x1, y1 = pointline[next_non_none_index][0]
@@ -273,31 +296,33 @@ if __name__ == "__main__":
                                 int(x0 + delta_x),
                                 int(y0 + delta_y),
                             )
-                            interpolated_bbox = objects[0][
-                                current_frame_current_center_idx
-                            ][1]
+
+                            bbox0 = pointline[prev_non_none_index][1]
+                            bbox1 = pointline[next_non_none_index][1]
+                            average_bbox = [
+                                int((b0 + b1) / 2) for b0, b1 in zip(bbox0, bbox1)
+                            ]
 
                             pointline[rel_all_frame_idx] = (
                                 interpolated_center,
-                                interpolated_bbox,
+                                average_bbox,
                             )
                             objects[rel_all_frame_idx].append(
                                 pointline[rel_all_frame_idx]
                             )
             else:
                 objects[0][current_frame_current_center_idx] = (None, None)
-        
+
         color_image = cv2.imread(f"processing/frames/{abs_current_image_idx + 1}.bmp")
         for center, bbox in objects[0]:
             if center is not None and bbox is not None:
                 x, y, w, h = bbox
                 cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
-        
+
         cv2.imshow("Pipeline Filter", color_image)
         cv2.waitKey(30)
 
         for i in range(PIPELINE_LENGTH):
             objects[i] = objects[i + 1]
-        
-        objects[PIPELINE_LENGTH] = gravestone
 
+        objects[PIPELINE_LENGTH] = gravestone
