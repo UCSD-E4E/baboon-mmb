@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import os
 import csv
+import shutil
 
 from scipy.optimize import linear_sum_assignment
 
@@ -20,7 +21,6 @@ if __name__ == "__main__":
     PIPELINE_LENGTH = 5  # Step 1 of Pipeline Filter in MMB paper
     PIPELINE_SIZE = 7  # Step 1 of Pipeline Filter in MMB paper
     H = 3  # Step 4 of Pipeline Filter in MMB paper
-
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <video file>")
         sys.exit(1)
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     """
-    Step 1: Accumulative Multiframe Differencing
+    # Step 1: Accumulative Multiframe Differencing
     """
     _, I_t_minus_1 = cap.read()
     _, I_t = cap.read()
@@ -128,7 +128,6 @@ if __name__ == "__main__":
     cap.release()
 
     cv2.destroyAllWindows()
-
     """
     Step 2 TODO: Figure out a way to call the Demo_fRMC.m script from Python
     """
@@ -152,102 +151,195 @@ if __name__ == "__main__":
 
         return images
 
-    def get_blob_centroids_and_boxes(binary_img):
-        # Find contours in the binary images
-        contours, _ = cv2.findContours(
-            binary_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        centroids = []
-        bounding_boxes = []
-
-        for contour in contours:
-            # Calculate bounding box for each contour
-            x, y, w, h = cv2.boundingRect(contour)
-            bounding_boxes.append((x, y, w, h))
-
-            # Caclulate centroid for each contour
-            M = cv2.moments(contour)
-            if M["m00"] != 0:
-                c_x = int(M["m10"] / M["m00"])
-                c_y = int(M["m01"] / M["m00"])
-                centroids.append((c_x, c_y))
-            else:
-                c_x, c_y = 0, 0
-
-            centroids.append((c_x, c_y))
-
-        return centroids, bounding_boxes
-
     amfd_images = read_images_from_directory("processing/amfd")
-    lrmc_images = read_images_from_directory("processing/lrmc")
+    lrmc_images = read_images_from_directory("processing/amfd")
 
     merged_images = [
         cv2.bitwise_or(amfd_image, lrmc_image)
         for amfd_image, lrmc_image in zip(amfd_images, lrmc_images)
     ]
 
-    frame_count = 1
-
-    with open("./processing/output.csv", 'w', newline='') as csvfile:
-        fieldnames = ['frame', 'x', 'y', 'w', 'h']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-    for idx in range(len(merged_images) - PIPELINE_LENGTH):
-        final_bboxes = []
-
-        current_frame = merged_images[idx]
-        next_frames = merged_images[idx + 1 : idx + PIPELINE_LENGTH + 1]
-
-        # 2. Identify candidate target points (centroids) and their bounding boxes
-        candidate_centroids, candidate_bboxes = get_blob_centroids_and_boxes(
-            current_frame
+    def find_centers_and_bboxes(image):
+        contours, _ = cv2.findContours(
+            image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-        h = np.zeros(len(candidate_centroids))
-        detected_bboxes = [[] for _ in range(len(candidate_centroids))]
 
-        # 3. Check for object centroids in neighborhood in next frames
-        for next_frame in next_frames:
-            (
-                next_candidate_centroids,
-                next_candidate_bboxes,
-            ) = get_blob_centroids_and_boxes(next_frame)
-            cost_matrix = np.zeros(
-                (len(candidate_centroids), len(next_candidate_centroids))
-            )
+        centers = []
+        bboxes = []
 
-            for i, current_centroid in enumerate(candidate_centroids):
-                for j, next_centroid in enumerate(next_candidate_centroids):
-                    s_x = abs(current_centroid[0] - next_centroid[0])  # Eq. 11
-                    s_y = abs(current_centroid[1] - next_centroid[1])  # Eq. 12
+        for contour in contours:
+            M = cv2.moments(contour)
 
-                    if 0 < s_x < PIPELINE_SIZE and 0 < s_y < PIPELINE_SIZE:  # Eq. 10
-                        cost_matrix[i, j] = np.sqrt(s_x**2 + s_y**2)
-                    else:
-                        cost_matrix[i, j] = float("inf")
+            if M["m00"] != 0:
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+            else:
+                cX, cY = 0, 0
 
-            # Use Hungarian algorithm to find the optimal assignment
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            centers.append((cX, cY))
 
-            # Increase h for matched points and update the bounding box and centroid
-            for i, j in zip(row_ind, col_ind):
-                if cost_matrix[i, j] < float("inf"):
-                    h[i] += 1
-                    detected_bboxes[i].append(next_candidate_bboxes[j])
+            x, y, w, h = cv2.boundingRect(contour)
+            bboxes.append((x, y, w, h))
 
-        for i, occurence in enumerate(h):
-            if occurence >= H:
-                final_bboxes.append(candidate_bboxes[i])
-            elif 3 <= occurence <= 4:
-                # Calculate the average position of the detected bounding box
-                avg_bbox = np.mean(detected_bboxes[i], axis=0).astype(int)
-                final_bboxes.append(tuple(avg_bbox))
-        
-        with open("./processing/output.csv", 'a', newline='') as csvfile:
-            write = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            for bbox in final_bboxes:
+        return centers, bboxes
+
+    gravestone = (-1, [(-1, -1)])
+    objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)]
+
+    with open('output.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=',')
+        writer.writerow(['frame #', 'i', 'j', 'x', 'y', 'w', 'h'])
+
+    for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
+        for i, (frame_objs) in enumerate(objects):
+            if frame_objs == gravestone:
+                centers_frame, bboxes_frame = find_centers_and_bboxes(
+                    merged_images[abs_current_image_idx + i]
+                )
+                objects[i] = list(zip(centers_frame, bboxes_frame))
+
+        current_frame_obj_to_next_frame_obj_lookup = []
+        next_frames_obj_corresponences = np.zeros((len(objects[0]), PIPELINE_LENGTH))
+        for rel_next_frame_idx in range(1, PIPELINE_LENGTH + 1):
+            cost_matrix = np.zeros((len(objects[0]), len(objects[rel_next_frame_idx])))
+            for a, (point_a, _) in enumerate(objects[0]):
+                for b, (point_b, _) in enumerate(objects[rel_next_frame_idx]):
+                    SabX = abs(point_a[0] - point_b[0])
+                    SabY = abs(point_a[1] - point_b[1])
+                    if 0 < SabX < PIPELINE_SIZE and 0 < SabY < PIPELINE_SIZE:
+                        cost_matrix[a, b] = 1
+
+            row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
+            optimal_correspondences = list(zip(row_ind, col_ind))
+            current_frame_obj_to_next_frame_obj_lookup.append(optimal_correspondences)
+            for a, b in optimal_correspondences:
+                next_frames_obj_corresponences[a][rel_next_frame_idx - 1] = 1
+
+        for current_frame_current_center_idx in range(len(objects[0])):
+            if (
+                sum(next_frames_obj_corresponences[current_frame_current_center_idx])
+                > H
+            ):
+                pointline = [None for _ in range(PIPELINE_LENGTH + 1)]
+                pointline[0] = objects[0][current_frame_current_center_idx]
+
+                for rel_next_frame_idx, results in enumerate(
+                    current_frame_obj_to_next_frame_obj_lookup
+                ):
+                    next_center_idx = next(
+                        (
+                            b
+                            for a, b in results
+                            if a == current_frame_current_center_idx
+                        ),
+                        None,
+                    )
+                    if next_center_idx is not None:
+                        pointline[rel_next_frame_idx + 1] = objects[
+                            rel_next_frame_idx + 1
+                        ][next_center_idx]
+
+                for rel_all_frame_idx in range(1, PIPELINE_LENGTH):
+                    if pointline[rel_all_frame_idx] is None:
+                        next_non_none_index = next(
+                            (
+                                i
+                                for i, v in enumerate(
+                                    pointline[rel_all_frame_idx + 1 :],
+                                    start=rel_all_frame_idx + 1,
+                                )
+                                if v is not None
+                            ),
+                            None,
+                        )
+                        prev_non_none_index = next(
+                            i
+                            for i, v in enumerate(
+                                reversed(pointline[:rel_all_frame_idx])
+                            )
+                            if v is not None
+                        )
+
+                        if next_non_none_index is None:
+                            if prev_non_none_index > 0:
+                                x_prev, y_prev = pointline[prev_non_none_index - 1][0]
+                                x_cur, y_cur = pointline[prev_non_none_index][0]
+                                delta_x = x_cur - x_prev
+                                delta_y = y_cur - y_prev
+                                extrapolated_center = (
+                                    int(x_cur + delta_x),
+                                    int(y_cur + delta_y),
+                                )
+
+                                bbox_prev = pointline[prev_non_none_index - 1][1]
+                                bbox_cur = pointline[prev_non_none_index][1]
+                                delta_bbox = [
+                                    cur - prev for cur, prev in zip(bbox_cur, bbox_prev)
+                                ]
+                                extrapolated_bbox = [
+                                    int(cur + delta)
+                                    for cur, delta in zip(bbox_cur, delta_bbox)
+                                ]
+
+                                pointline[rel_all_frame_idx] = (
+                                    extrapolated_center,
+                                    extrapolated_bbox,
+                                )
+                                objects[rel_all_frame_idx].append(
+                                    pointline[rel_all_frame_idx]
+                                )
+                        else:
+                            x0, y0 = pointline[prev_non_none_index][0]
+                            x1, y1 = pointline[next_non_none_index][0]
+                            delta_x = (x1 - x0) / (
+                                next_non_none_index - prev_non_none_index + 1
+                            )
+                            delta_y = (y1 - y0) / (
+                                next_non_none_index - prev_non_none_index + 1
+                            )
+                            interpolated_center = (
+                                int(x0 + delta_x),
+                                int(y0 + delta_y),
+                            )
+
+                            bbox0 = pointline[prev_non_none_index][1]
+                            bbox1 = pointline[next_non_none_index][1]
+                            average_bbox = [
+                                int((b0 + b1) / 2) for b0, b1 in zip(bbox0, bbox1)
+                            ]
+
+                            pointline[rel_all_frame_idx] = (
+                                interpolated_center,
+                                average_bbox,
+                            )
+                            objects[rel_all_frame_idx].append(
+                                pointline[rel_all_frame_idx]
+                            )
+            else:
+                objects[0][current_frame_current_center_idx] = (None, None)
+
+        color_image = cv2.imread(f"processing/frames/{abs_current_image_idx + 1}.bmp")
+        for center, bbox in objects[0]:
+            if center is not None and bbox is not None:
+                i, j = center
                 x, y, w, h = bbox
-                write.writerow({'frame': frame_count, 'x': x, 'y': y, 'w': w, 'h': h})
+                cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
+                # write to csv
+                with open('output.csv', 'a', newline='') as csvfile:
+                    writer = csv.writer(csvfile, delimiter=',')
+                    writer.writerow([abs_current_image_idx, i, j, x, y, w, h])
 
-        frame_count += 1
+        cv2.imshow("Pipeline Filter", color_image)
+        cv2.waitKey(30)
+
+        for i in range(PIPELINE_LENGTH):
+            objects[i] = objects[i + 1]
+
+        objects[PIPELINE_LENGTH] = gravestone
+
+    
+    cv2.destroyAllWindows()
+    csvfile.close()
+
+    shutil.rmtree("processing")
+
