@@ -17,6 +17,7 @@ while true
     if ~isfile(img_path)
         break;
     end
+    %% Saves grey intensity to 3d array. i = frame#, (:,:) = (height, width)
     imArray(:,:,i) = rgb2gray(imread(img_path));
     i = i + 1;
 end
@@ -30,8 +31,14 @@ height = imDim(1)/rate;
 width = imDim(2)/rate;
 dwnSize = height*width/(rate^2);  % dimension of the downsampled image as a vector
 
+%% LRMC Optimization
+L = 4
+N = i / (L * 10)
+
 %% Applying the fRMC on gray scaled images
-imMatG = reshape(imArray, height*width, []);
+%% Reshape (height, width, frame) to (height*width, frame)
+newImMatG = reshape(imArray, height*width, []);
+imMatG = movmean(newImMatG,N,2,"Endpoints","discard");
 clear imArray
 imMatG = double(imMatG);
 frNum = size(imMatG, 2);
