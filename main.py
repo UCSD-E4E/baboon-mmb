@@ -4,6 +4,7 @@ import numpy as np
 import os
 import csv
 import shutil
+import subprocess
 
 from scipy.optimize import linear_sum_assignment
 
@@ -21,6 +22,9 @@ if __name__ == "__main__":
     PIPELINE_LENGTH = 5  # Step 1 of Pipeline Filter in MMB paper
     PIPELINE_SIZE = 7  # Step 1 of Pipeline Filter in MMB paper
     H = 3  # Step 4 of Pipeline Filter in MMB paper
+
+    lrmc_script = "Demo_fRMC"
+
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <video file>")
         sys.exit(1)
@@ -128,9 +132,14 @@ if __name__ == "__main__":
     cap.release()
 
     cv2.destroyAllWindows()
+
     """
-    Step 2 TODO: Figure out a way to call the Demo_fRMC.m script from Python
+    Step 2 Low Rank Matrix Completion
     """
+    
+    os.makedirs("processing/lrmc")
+    command = ["matlab", "-nodisplay", "-nosplash", "-r", f"{lrmc_script}; exit"]
+    subprocess.run(command)
 
     """
     Step 3: Pipeline Filter
@@ -152,10 +161,10 @@ if __name__ == "__main__":
         return images
 
     amfd_images = read_images_from_directory("processing/amfd")
-    lrmc_images = read_images_from_directory("processing/amfd")
+    lrmc_images = read_images_from_directory("processing/lrmc")
 
     merged_images = [
-        cv2.bitwise_or(amfd_image, lrmc_image)
+        cv2.bitwise_and(amfd_image, lrmc_image)
         for amfd_image, lrmc_image in zip(amfd_images, lrmc_images)
     ]
 
@@ -186,9 +195,13 @@ if __name__ == "__main__":
     gravestone = (-1, [(-1, -1)])
     objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)]
 
-    with open('output.csv', 'w', newline='') as csvfile:
+    with open('labels.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile, delimiter=',')
         writer.writerow(['frame #', 'i', 'j', 'x', 'y', 'w', 'h'])
+
+    if os.path.exists("output"):
+        shutil.rmtree("output")
+    os.makedirs("output")
 
     for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
         for i, (frame_objs) in enumerate(objects):
@@ -323,13 +336,15 @@ if __name__ == "__main__":
             if center is not None and bbox is not None:
                 i, j = center
                 x, y, w, h = bbox
+                cv2.circle(color_image, (i, j), 1, (0, 0, 255), -1)
                 cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
                 # write to csv
-                with open('output.csv', 'a', newline='') as csvfile:
+                with open('labels.csv', 'a', newline='') as csvfile:
                     writer = csv.writer(csvfile, delimiter=',')
                     writer.writerow([abs_current_image_idx, i, j, x, y, w, h])
 
         cv2.imshow("Pipeline Filter", color_image)
+        cv2.imwrite(f"output/{abs_current_image_idx + 1}.bmp", color_image)
         cv2.waitKey(30)
 
         for i in range(PIPELINE_LENGTH):

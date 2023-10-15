@@ -17,23 +17,37 @@ dir_path = './processing/frames/';
 files = dir(fullfile(dir_path, '*.bmp'));
 M = length(files);
 
-N = M / (L * f);
+N = floor(M / (L * f));
 
-inner_loop = M / N;
 frameCounter = 1;
 
-for k = 1:N
+while frameCounter < M
     imArray = [];
 
+    offset = 0;
+
+    if frameCounter ~= 1
+        offset = floor(M/(2*N));
+    end
+
+    frameCounter = frameCounter - offset;
+
+    inner_loop = min(floor(M/N), M - frameCounter + 1);
+
     for j = 1:inner_loop
-        idx = (k - 1) * L + j; % Frame index 
+        idx = frameCounter + j - 1; 
         img_path = fullfile(dir_path, [num2str(idx) '.bmp']);
 
         if ~isfile(img_path)
-           break;
+            break;
         end
 
         imArray(:,:,j) = rgb2gray(imread(img_path));
+    end
+
+
+    if isempty(imArray) || ndims(imArray) < 3
+        break;
     end
 
     %% Extracting the size information of the cropped images and reshaping the sequence
