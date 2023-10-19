@@ -1,53 +1,25 @@
-clc;
-close all;
-clear variables;
+function Demo_fRMC(max_niter_param, gamma2_param, current_frame_param, N_param)
+    max_niter = max_niter_param;
+    gamma2 = gamma2_param;
+    current_frame = current_frame_param;
+    N = N_param;
+    L = L_param;
 
-%% Initialize parameters
-tElapsed = nan;
-Disp = 0;
-max_niter = 10;
-gamma1 = 0.8;
-gamma2 = 0.8;
-L = 4;
-f = 30;
-savePathSt = fullfile('processing/', 'lrmc/');
+    savePathSt = fullfile('processing/', 'lrmc/');
 
-dir_path = './processing/frames/';
+    dir_path = './processing/frames/';
 
-files = dir(fullfile(dir_path, '*.bmp'));
-M = length(files);
-
-N = floor(M / (L * f));
-
-frameCounter = 1;
-
-while frameCounter < M
     imArray = [];
 
-    offset = 0;
-
-    if frameCounter ~= 1
-        offset = floor(M/(2*N));
-    end
-
-    frameCounter = frameCounter - offset;
-
-    inner_loop = min(floor(M/N), M - frameCounter + 1);
-
-    for j = 1:inner_loop
-        idx = frameCounter + j - 1; 
+    for i = 1:N
+        idx = current_frame_param + i - 1;
         img_path = fullfile(dir_path, [num2str(idx) '.bmp']);
 
-        if ~isfile(img_path)
+        if ~exist(img_path, 'file')
             break;
         end
 
-        imArray(:,:,j) = rgb2gray(imread(img_path));
-    end
-
-
-    if isempty(imArray) || ndims(imArray) < 3
-        break;
+        imArray(:,:,i) = rgb2gray(imread(img_path));
     end
 
     %% Extracting the size information of the cropped images and reshaping the sequence
@@ -64,13 +36,9 @@ while frameCounter < M
     clear imArray
     imMatG = double(imMatG);
     frNum = size(imMatG, 2);
-    tic;
     [A, ~ ] = InfaceExtFrankWolfe(imMatG, [], gamma2, max_niter);
-    tElapsed = toc;
     E = abs(A - imMatG);
     savePath = fullfile(savePathSt);
-    save(fullfile(savePath,'Foreground.mat'), 'E');
-    save(fullfile(savePath,'Background.mat'), 'A');
     clear A
 
     %% Save the binary mask as video
@@ -85,10 +53,7 @@ while frameCounter < M
     ForegMask = imfill(ForegMask, 'holes');
     ForegMask = 255* uint8(ForegMask);
 
-    for j = 1:size(ForegMask, 3)
-        FileName = strcat(num2str(frameCounter), '.bmp'); 
-        path = fullfile(savePath, FileName);
-        imwrite(ForegMask(:, :, j), path);
-        frameCounter = frameCounter + 1;
-    end
-end 
+    FileName = strcat(num2str(current_frame_param), '.bmp'); 
+    path = fullfile(savePath, FileName);
+    imwrite(ForegMask(:, :, 1), path);
+end
