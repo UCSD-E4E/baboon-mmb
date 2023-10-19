@@ -4,23 +4,97 @@ import numpy as np
 import os
 import csv
 import shutil
+import subprocess
+import argparse
 
 from scipy.optimize import linear_sum_assignment
 
-
 if __name__ == "__main__":
-    # HYPER PARAMETERS
-    K = 4  # Eq. 4 in MMB paper
-    CONNECTIVITY = 4  # Algorithm 1 in MMB paper
-    AREA_MIN = 5  # Eq. 7 in MMB paper
-    AREA_MAX = 80  # Eq. 7 in MMB paper
-    ASPECT_RATIO_MIN = 1.0  # Eq. 7 in MMB paper
-    ASPECT_RATIO_MAX = 6.0  # Eq. 7 in MMB paper
-    L = 4  # Eq. 9 in MMB paper
-    KERNAL = np.ones((3, 3), np.uint8)  # Algorithm 1 in MMB paper
-    PIPELINE_LENGTH = 5  # Step 1 of Pipeline Filter in MMB paper
-    PIPELINE_SIZE = 7  # Step 1 of Pipeline Filter in MMB paper
-    H = 3  # Step 4 of Pipeline Filter in MMB paper
+    parser = argparse.ArgumentParser(description="MMB Paper parameters")
+
+    parser.add_argument(
+        "--K", type=float, default=4, help="Eq. 4 in MMB paper ([0.0, 8.0])"
+    )
+    parser.add_argument(
+        "--CONNECTIVITY",
+        type=int,
+        choices=[4, 8],
+        default=4,
+        help="Algorithm 1 in MMB paper (4 or 8)",
+    )
+    parser.add_argument(
+        "--AREA_MIN", type=int, default=5, help="Eq. 7 in MMB paper ([1, 10])"
+    )
+    parser.add_argument(
+        "--AREA_MAX", type=int, default=80, help="Eq. 7 in MMB paper ([50, 100])"
+    )
+    parser.add_argument(
+        "--ASPECT_RATIO_MIN",
+        type=float,
+        default=1.0,
+        help="Eq. 7 in MMB paper ([0.8, 1.5])",
+    )
+    parser.add_argument(
+        "--ASPECT_RATIO_MAX",
+        type=float,
+        default=6.0,
+        help="Eq. 7 in MMB paper ([4.0, 8.0])",
+    )
+    parser.add_argument("--L", type=int, default=4, help="Eq. 9 in MMB paper ([1, 8])")
+    parser.add_argument(
+        "--KERNAL",
+        type=int,
+        choices=[1, 3, 5, 7, 9, 11],
+        default=3,
+        help="Algorithm 1 in MMB paper (1, 3, 5, 7, 9, or 11)",
+    )
+    parser.add_argument(
+        "--PIPELINE_LENGTH",
+        type=int,
+        default=5,
+        help="Step 1 of Pipeline Filter in MMB paper ([3, 10])",
+    )
+    parser.add_argument(
+        "--PIPELINE_SIZE",
+        type=int,
+        choices=[3, 5, 7, 9, 11],
+        default=7,
+        help="Step 1 of Pipeline Filter in MMB paper (3, 5, 7, 9, or 11)",
+    )
+    parser.add_argument(
+        "--H",
+        type=int,
+        default=3,
+        help="Step 4 of Pipeline Filter in MMB paper ([1, PIPELINE_LENGTH])",
+    )
+    parser.add_argument(
+        "--MAX_NITER_PARAM",
+        type=int,
+        default=10,
+        help="Max number of iterations ([1, 20])",
+    )
+    parser.add_argument(
+        "--GAMMA2_PARAM", type=float, default=0.8, help="Gamma2 parameter ([0.0, 1.0])"
+    )
+
+    args = parser.parse_args()
+
+    K = args.K
+    CONNECTIVITY = args.CONNECTIVITY
+    AREA_MIN = args.AREA_MIN
+    AREA_MAX = args.AREA_MAX
+    ASPECT_RATIO_MIN = args.ASPECT_RATIO_MIN
+    ASPECT_RATIO_MAX = args.ASPECT_RATIO_MAX
+    L = args.L
+    KERNAL = args.KERNAL
+    PIPELINE_LENGTH = args.PIPELINE_LENGTH
+    PIPELINE_SIZE = args.PIPELINE_SIZE
+    H = args.H
+    MAX_NITER_PARAM = args.MAX_NITER_PARAM
+    GAMMA2_PARAM = args.GAMMA2_PARAM
+
+    lrmc_script = "Demo_fRMC"
+
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <video file>")
         sys.exit(1)
@@ -41,6 +115,7 @@ if __name__ == "__main__":
 
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_rate = int(cap.get(cv2.CAP_PROP_FPS))
 
     """
     # Step 1: Accumulative Multiframe Differencing
@@ -88,7 +163,9 @@ if __name__ == "__main__":
         _, binary_image = cv2.threshold(Id_gray, T, 255, cv2.THRESH_BINARY)
 
         # Perform morphological operations on binary image
-        binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, KERNAL)
+        binary_image = cv2.morphologyEx(
+            binary_image, cv2.MORPH_OPEN, np.ones((KERNAL, KERNAL), np.uint8)
+        )
 
         # Remove false alarms
         # Connected area  must satisfy the following conditions:
@@ -128,9 +205,23 @@ if __name__ == "__main__":
     cap.release()
 
     cv2.destroyAllWindows()
+
     """
-    Step 2 TODO: Figure out a way to call the Demo_fRMC.m script from Python
+    Step 2 Low Rank Matrix Completion
     """
+    os.makedirs("processing/lrmc", exist_ok=True)
+    N = frame_count / (L * frame_rate)
+    for i in range(1, frame_count + 1):
+        if frame_count - i < L:
+            break
+        lrmc_script = f"Demo_fRMC({MAX_NITER_PARAM}, {GAMMA2_PARAM}, {i}, {N})"
+        command = ["matlab", "-nodisplay", "-nosplash", "-r", f"{lrmc_script}; exit"]
+        subprocess.run(command)
+
+    for i in range(frame_count - L, frame_count + 1):
+        cv2.imwrite(f"processing/lrmc/{i}.bmp", np.zeros((height, width, 3), np.uint8))
+
+    cv2.destroyAllWindows()
 
     """
     Step 3: Pipeline Filter
@@ -152,7 +243,7 @@ if __name__ == "__main__":
         return images
 
     amfd_images = read_images_from_directory("processing/amfd")
-    lrmc_images = read_images_from_directory("processing/amfd")
+    lrmc_images = read_images_from_directory("processing/lrmc")
 
     merged_images = [
         cv2.bitwise_or(amfd_image, lrmc_image)
@@ -186,9 +277,13 @@ if __name__ == "__main__":
     gravestone = (-1, [(-1, -1)])
     objects = [gravestone for _ in range(PIPELINE_LENGTH + 1)]
 
-    with open('output.csv', 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=',')
-        writer.writerow(['frame #', 'i', 'j', 'x', 'y', 'w', 'h'])
+    with open("labels.csv", "w", newline="") as csvfile:
+        writer = csv.writer(csvfile, delimiter=",")
+        writer.writerow(["frame #", "i", "j", "x", "y", "w", "h"])
+
+    if os.path.exists("output"):
+        shutil.rmtree("output")
+    os.makedirs("output")
 
     for abs_current_image_idx in range(len(merged_images) - PIPELINE_LENGTH):
         for i, (frame_objs) in enumerate(objects):
@@ -323,13 +418,15 @@ if __name__ == "__main__":
             if center is not None and bbox is not None:
                 i, j = center
                 x, y, w, h = bbox
+                cv2.circle(color_image, (i, j), 1, (0, 0, 255), -1)
                 cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 1)
                 # write to csv
-                with open('output.csv', 'a', newline='') as csvfile:
-                    writer = csv.writer(csvfile, delimiter=',')
+                with open("labels.csv", "a", newline="") as csvfile:
+                    writer = csv.writer(csvfile, delimiter=",")
                     writer.writerow([abs_current_image_idx, i, j, x, y, w, h])
 
         cv2.imshow("Pipeline Filter", color_image)
+        cv2.imwrite(f"output/{abs_current_image_idx + 1}.bmp", color_image)
         cv2.waitKey(30)
 
         for i in range(PIPELINE_LENGTH):
@@ -337,9 +434,7 @@ if __name__ == "__main__":
 
         objects[PIPELINE_LENGTH] = gravestone
 
-    
     cv2.destroyAllWindows()
     csvfile.close()
 
     shutil.rmtree("processing")
-
