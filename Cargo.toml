@@ -1,0 +1,13 @@
+[package]
+name = "baboon-mmb"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+opencv =  "0.86.0"
+structopt = "0.3.26"
+csv = "1.3.0"
+pathfinding = "4.3.2"
+indicatif = "0.17.7"
