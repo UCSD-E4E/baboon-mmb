@@ -17,6 +17,7 @@ pub fn pf(opt: &crate::Opt) {
 
     opencv::videoio::VideoCaptureTrait::release(&mut cap).unwrap();
 
+    // Start a CSV file to store the labels and a output directory to store the images.
     let file = std::fs::File::create("labels.csv").unwrap();
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(true)
@@ -31,13 +32,17 @@ pub fn pf(opt: &crate::Opt) {
     }
     std::fs::create_dir_all("output").unwrap();
 
+    // Start a vector that contains Object observation for the n'th frame and up to the n + pipeline_length'th frame.
     let mut objects: Vec<Option<Vec<Object>>> =
         vec![None; (opt.pipeline_length + 1).try_into().unwrap()];
 
     for abs_current_image_idx in 0..(frame_count as usize - opt.pipeline_length as usize) {
+        // Get the objects for the current frame and up to the pipeline_length'th frame.
         get_frame_objs(&mut objects, abs_current_image_idx);
-        
-        if objects[0].as_ref().map_or(0, |o| o.len()) > 0{
+
+        // We need to check if the current frame had objects detected in it, otherwise theres no point on running the pipeline filter on the current frame.
+        if objects[0].as_ref().map_or(0, |o| o.len()) > 0 {
+            // The objective is to find what objects in the current frame correspond to objects in the next frames.
             let mut current_frame_obj_to_next_frame_obj_lookup: Vec<Vec<(usize, usize)>> =
                 Vec::new();
             let mut next_frames_obj_correspondences =
@@ -46,6 +51,7 @@ pub fn pf(opt: &crate::Opt) {
                     objects[0].as_ref().map_or(0, |o| o.len())
                 ];
 
+            // For each current frame and next frame, we generate a psuedo-cost matrix.
             (1..=opt.pipeline_length as usize).for_each(|rel_next_frame_idx| {
                 let mut cost_matrix: Vec<Vec<i32>> =
                     vec![
@@ -56,8 +62,11 @@ pub fn pf(opt: &crate::Opt) {
                     for (a, (point_a, _)) in current_objects.iter().enumerate() {
                         if let Some(next_frame_objects) = &objects[rel_next_frame_idx] {
                             for (b, (point_b, _)) in next_frame_objects.iter().enumerate() {
+                                // S_{ab}(x) = |x_a - x_b|
+                                // S_{ab}(y) = |y_a - y_b|
                                 let sab_x = (point_a.0 - point_b.0).abs();
                                 let sab_y = (point_a.1 - point_b.1).abs();
+                                // C_{ab} = 1 if 0 < S_{ab}(x) < pipeline_size & 0 < S_{ab}(y) < pipeline_size, 0 otherwise
                                 if 0 < sab_x
                                     && sab_x < opt.pipeline_size
                                     && 0 < sab_y
@@ -70,6 +79,8 @@ pub fn pf(opt: &crate::Opt) {
                     }
                 }
 
+                // The cost matrix must be square for the Kuhn-Munkres algorithm to work.
+                // We pad with 0s because a 0 in the cost matrix means the objects are not a match anyways.
                 loop {
                     if !(cost_matrix.len() > cost_matrix[0].len()) {
                         break;
@@ -83,31 +94,37 @@ pub fn pf(opt: &crate::Opt) {
                     cost_matrix = new_cost_matrix;
                 }
 
-                let cash_flow_as_matrx =
+                // Solve the linear sum assignment problem using the Kuhn-Munkres algorithm.
+                // There aren't really any libraries for Rust that implement this algorithm, so we have to do weird conversions to get it to work.
+                let cost_matrix_for_km =
                     pathfinding::matrix::Matrix::from_rows(cost_matrix).unwrap();
-                let (_, assignment) = pathfinding::prelude::kuhn_munkres(&cash_flow_as_matrx);
+                let (_, assignment) = pathfinding::prelude::kuhn_munkres(&cost_matrix_for_km);
                 let mut optimal_correspondances: Vec<(usize, usize)> = Vec::new();
 
-                for a_idx in 0..cash_flow_as_matrx.rows {
+                for a_idx in 0..cost_matrix_for_km.rows {
                     let b_idx = assignment[a_idx];
-                    if cash_flow_as_matrx[(a_idx, b_idx)] == 1 {
+                    if cost_matrix_for_km[(a_idx, b_idx)] == 1 {
                         optimal_correspondances.push((a_idx, b_idx));
                     }
                 }
 
+                // We store the optimal correspondances for the current frame and next frame.
                 current_frame_obj_to_next_frame_obj_lookup.push(optimal_correspondances.clone());
                 for (a_idx, _) in optimal_correspondances {
                     next_frames_obj_correspondences[a_idx][rel_next_frame_idx - 1] = 1;
                 }
             });
-
+            
+            // We now count the number of correspondances for each object in the current frame in the next frames to see if we need to remove the object or fill in missing observations.
             (0..objects[0].as_ref().map_or(0, |o| o.len())).for_each(
+                // If the object occurence number is greater than H, the candidate is accepted.
                 |current_frame_current_center_idx| {
                     if next_frames_obj_correspondences[current_frame_current_center_idx]
                         .iter()
                         .sum::<usize>()
                         > opt.h.try_into().unwrap()
                     {
+                        // We now either extrapolate the object's position or fill in missing observations.
                         let mut pointline: Vec<Option<Object>> =
                             vec![None; (opt.pipeline_length + 1).try_into().unwrap()];
 
@@ -241,6 +258,8 @@ pub fn pf(opt: &crate::Opt) {
                             }
                         }
                     } else {
+                        // If the object occurence number is less than H, the candidate is rejected.
+                        // It's important that the indices aren't shifted so we use tombstones instead.
                         if let Some(ref mut objects_vec) = &mut objects[0] {
                             if let Some(object) =
                                 objects_vec.get_mut(current_frame_current_center_idx)
@@ -254,6 +273,8 @@ pub fn pf(opt: &crate::Opt) {
             );
         }
 
+        // We now draw the bounding boxes and centers on the current frame.
+        // We also write the bounding boxes to the CSV file.
         let mut color_image = opencv::imgcodecs::imread(
             format!("processing/frames/{}.bmp", abs_current_image_idx + 1).as_str(),
             opencv::imgcodecs::IMREAD_COLOR,
