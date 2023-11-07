@@ -50,7 +50,7 @@ You can configure the behavior of the algorithms by setting different command-li
 
 ### Example
 ```bash
-cargo run --release -- --k 6 --area_min 10 --video_file <path_to_video>
+cargo run --release -- <path_to_video> --k 6 --area_min 10
 ```
 
 ## Citations
