@@ -10,19 +10,6 @@ function [Z,E]= InfaceExtFrankWolfe(X, gamma1, gamma2, MaxIter)
 %   Z: Minimum rank estimate  [m*n]                                       %
 %   E: Error matrix [m*n]                                                 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% choosing the hyperparameters
-if nargin < 4
-    gamma1 = 0.2; %0<=gamma1<=gamma2<=1
-end
-if nargin < 3
-    gamma2 = 0.8;
-end
-% if nargin < 3
-%     delta = 10*trace(X'*X); %nuclear normf
-% end
-if nargin < 2
-    MaxIter = 10;
-end
 delta = 10*trace(X'*X); %nuclear normf
 [m,n]=size(X);
 S = 1:m*n;   %index for known values
@@ -47,12 +34,10 @@ U=u;V=-v;D=delta;
 B=max(f(0)+trace(fGrad'*Z),0);
 
 cnt=0;
-wb = waitbar(0,'Wait!');
 opt_met = 0.1;
 err_est = 1;
 k = 0;
 while err_est > opt_met && k < MaxIter
-    waitbar(k/MaxIter);
 %     Z_old = Z;
     fGrad(S)=Z(S)-xij;
     
@@ -128,7 +113,6 @@ end
 % rank_est=rank(Z) %estimation rank
 % err_est_percentage = sqrt(sum((X(S)-Z(S)).^2)/(norm(X(S))^2))*100; %error on known valuse
 E=X-Z;
-close(wb)
 end
 
 function [u,d,v]=svd_thin(x)
