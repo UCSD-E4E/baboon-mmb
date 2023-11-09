@@ -7,9 +7,9 @@
 // ============================================================================
 """
 
+import shutil
 import sys
 import os
-import shutil
 import argparse
 
 from amfd import amfd
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         help="Max number of iterations ([1, 20])",
     )
     parser.add_argument(
-        "--GAMMA1_PARAM", type=float, default=0.8, help="Gamma1 parameter ([0.0, 1.0])"
+        "--GAMMA1_PARAM", type=float, default=0.3, help="Gamma1 parameter ([0.0, 1.0])"
     )
     parser.add_argument(
         "--GAMMA2_PARAM", type=float, default=0.8, help="Gamma2 parameter ([0.0, 1.0])"

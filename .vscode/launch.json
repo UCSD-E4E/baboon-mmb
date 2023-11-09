@@ -9,15 +9,21 @@
             "type": "python",
             "request": "launch",
             "module": "examplePackage.exampleModule",
-            "justMyCode": true
+            "justMyCode": true,
+            "args": [
+                "data/output.mkv"
+            ]
         },
         {
             "name": "Python: Run File",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/examplePackage/exampleModule.py",
+            "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "args": [
+                "data/output.mkv"
+            ]
         }
     ]
 }
