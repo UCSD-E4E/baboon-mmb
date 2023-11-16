@@ -48,6 +48,8 @@ from pf import pf
 //
 // gamma2_param: 0.8, [gamma1_param, 1.0], fRMC (Background subtraction via fast robust matrix completion, Rezaei et al., 2017)
 //
+// bitewise_and: true, {true, false}, Bitewise AND the masks
+//
 // video_file: String, path to video file
 // ============================================================================
 """
@@ -122,6 +124,9 @@ if __name__ == "__main__":
         "--GAMMA2_PARAM", type=float, default=0.8, help="Gamma2 parameter ([0.0, 1.0])"
     )
     parser.add_argument(
+        "--BITEWISE_AND", type=bool, default=True, help="Bitewise AND the masks"
+    )
+    parser.add_argument(
         "video_file", type=str, help="Path to the video file to be processed."
     )
 
@@ -141,17 +146,18 @@ if __name__ == "__main__":
     MAX_NITER_PARAM = args.MAX_NITER_PARAM
     GAMMA1_PARAM = args.GAMMA1_PARAM
     GAMMA2_PARAM = args.GAMMA2_PARAM
+    BITEWISE_AND = args.BITEWISE_AND
 
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <video file>")
         sys.exit(1)
 
     VIDEO_FILE = args.video_file
-    
-    # Rather than storing the resulting binary masks from AMFD and LRMC in memory, we opt to save them to disk. 
-    # Although it may be feasible to merge the AMFD and LRMC processes (and possibly the Pipeline Filter process), we decided to keep them separate. 
-    # Combining them could make the code harder to understand and maintain, and could also result in a significant increase in the overhead required by the MATLAB scripts. 
-    # Additionally, we save the frames to disk since we only need to retrieve them again for the Pipeline Filter step. 
+
+    # Rather than storing the resulting binary masks from AMFD and LRMC in memory, we opt to save them to disk.
+    # Although it may be feasible to merge the AMFD and LRMC processes (and possibly the Pipeline Filter process), we decided to keep them separate.
+    # Combining them could make the code harder to understand and maintain, and could also result in a significant increase in the overhead required by the MATLAB scripts.
+    # Additionally, we save the frames to disk since we only need to retrieve them again for the Pipeline Filter step.
     # By doing so, we avoid keeping them in memory when they are not needed for an extended period.
     if not os.path.exists("processing/amfd"):
         os.makedirs("processing/amfd")
@@ -163,8 +169,17 @@ if __name__ == "__main__":
     if not os.path.exists("processing/frames"):
         os.makedirs("processing/frames")
 
-    amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX, KERNAL, VIDEO_FILE)
+    amfd(
+        K,
+        CONNECTIVITY,
+        AREA_MIN,
+        AREA_MAX,
+        ASPECT_RATIO_MIN,
+        ASPECT_RATIO_MAX,
+        KERNAL,
+        VIDEO_FILE,
+    )
     lrmc(L, KERNAL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, VIDEO_FILE)
-    pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, VIDEO_FILE)
+    pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITEWISE_AND, VIDEO_FILE)
 
     shutil.rmtree("processing")
