@@ -1,3 +1,4 @@
+import os
 import sys
 import cv2
 import numpy as np
@@ -5,27 +6,41 @@ import numpy as np
 """
 # Step 1: Accumulative Multiframe Differencing
 """
-def amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX, KERNAL, VIDEO_FILE):
-    cap = cv2.VideoCapture(VIDEO_FILE)
 
-    if not cap.isOpened():
-        print("Error opening video file")
+
+def amfd(
+    K,
+    CONNECTIVITY,
+    AREA_MIN,
+    AREA_MAX,
+    ASPECT_RATIO_MIN,
+    ASPECT_RATIO_MAX,
+    KERNAL,
+    IMAGE_SEQUENCE,
+):
+    files = sorted([f for f in os.listdir(IMAGE_SEQUENCE) if f.endswith(".jpg")])
+    if not files:
+        print("No images found in the specified folder")
         sys.exit(1)
-    
+
+    # Read the first image to get the width and height
+    I_t_minus_1 = cv2.imread(os.path.join(IMAGE_SEQUENCE, files[0]))
+    if I_t_minus_1 is None:
+        print(f"Failed to read image {files[0]}")
+        sys.exit(1)
+
     # We want to know the height and width of the video frames in case we need to create a black image of the same size.
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    frame_count = 1
+    height, width, _ = I_t_minus_1.shape
 
     # In order to calculate the AMFD, we need to read three frames at a times, the current frame (i_t) is the middle frame, so the first frame in the video will be skipped.
-    _, I_t_minus_1 = cap.read()
     # The second frame in the video will be the current frame (i_t) and the first to be processed for an output.
-    _, I_t = cap.read()
+    I_t = cv2.imread(os.path.join(IMAGE_SEQUENCE, files[1]))
+    if I_t is None:
+        print(f"Failed to read image {files[1]}")
+        sys.exit(1)
 
-    # We save the raw frame to disk here because it will be needed in the LRMC process. 
-    # Yes this is a bit of a hack.
-    cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t_minus_1)
+    frame_count = 1
+
     # To ensure consistency in frame count, we designate the initial black image as the first frame processed by AMFD.
     # Although it may be preferable to use a white frame to prevent LRMC from being disregarded due to bitwise_or, we are uncertain if this will result in a significant impact.
     cv2.imwrite(
@@ -33,21 +48,13 @@ def amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX
     )
 
     # The AMFD process is repeated until the end of the video is reached.
-    while True:
+    for file in files[2:]:
         # Get the next frame in the video and set it the next frame (i_t_plus_1).
         frame_count += 1
-        ret, I_t_plus_1 = cap.read()
-
-        # If there are no more frames to read, then we have reached the end of the video and can stop processing.
-        if not ret:
-            # Because we don't have a i_t_plus_1 for the last frame we save a black image to disk to pad the frame count.
-            # We also save the raw frame disk (for the hack mentioned previously).
-            cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
-            cv2.imwrite(
-                f"processing/amfd/{frame_count}.bmp",
-                np.zeros((height, width, 3), np.uint8),
-            )
-            break
+        I_t_plus_1 = cv2.imread(os.path.join(IMAGE_SEQUENCE, file))
+        if I_t_plus_1 is None:
+            print(f"Error reading image: {file}")
+            sys.exit(1)
 
         I_t_gray = cv2.cvtColor(I_t, cv2.COLOR_BGR2GRAY)
         I_t_minus_1_gray = cv2.cvtColor(I_t_minus_1, cv2.COLOR_BGR2GRAY)
@@ -115,8 +122,13 @@ def amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX
                 binary_image = cv2.subtract(binary_image, mask)
 
         binary_image = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2BGR)
-        cv2.imwrite(f"processing/frames/{frame_count}.bmp", I_t)
         cv2.imwrite(f"processing/amfd/{frame_count}.bmp", binary_image)
 
         I_t_minus_1 = I_t
         I_t = I_t_plus_1
+
+    # The last frame processed by AMFD is a black image
+    frame_count += 1
+    cv2.imwrite(
+        f"processing/amfd/{frame_count}.bmp", np.zeros((height, width, 3), np.uint8)
+    )

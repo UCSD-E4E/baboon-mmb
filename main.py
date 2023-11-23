@@ -8,13 +8,22 @@
 """
 
 import shutil
+import signal
+import subprocess
 import sys
 import os
 import argparse
 
-from amfd import amfd
-from lrmc import lrmc
-from pf import pf
+
+def signal_handler(sig, frame):
+    print("Stopping subprocesses...")
+    for p in subprocesses:
+        p.terminate()
+        p.wait()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, signal_handler)
 
 """
 // ============================================================================
@@ -49,6 +58,8 @@ from pf import pf
 // gamma2_param: 0.8, [gamma1_param, 1.0], fRMC (Background subtraction via fast robust matrix completion, Rezaei et al., 2017)
 //
 // bitewise_and: true, {true, false}, Bitewise AND the masks
+//
+// output_images: false, {true, false}, Output final images to disk
 //
 // video_file: String, path to video file
 // ============================================================================
@@ -127,7 +138,15 @@ if __name__ == "__main__":
         "--BITEWISE_AND", type=bool, default=True, help="Bitewise AND the masks"
     )
     parser.add_argument(
-        "video_file", type=str, help="Path to the video file to be processed."
+        "--OUTPUT_IMAGES", type=bool, default=False, help="Output final images to disk"
+    )
+    parser.add_argument(
+        "--FRAME_RATE", type=int, default=10, help="Frame rate of video file"
+    )
+    parser.add_argument(
+        "IMAGE_SEQUENCE",
+        type=str,
+        help="Path to the folder containing image sequence for video",
     )
 
     args = parser.parse_args()
@@ -147,12 +166,14 @@ if __name__ == "__main__":
     GAMMA1_PARAM = args.GAMMA1_PARAM
     GAMMA2_PARAM = args.GAMMA2_PARAM
     BITEWISE_AND = args.BITEWISE_AND
+    OUTPUT_IMAGES = args.OUTPUT_IMAGES
+    FRAME_RATE = args.FRAME_RATE
 
     if len(sys.argv) < 2:
         print(f"Usage: {sys.argv[0]} <video file>")
         sys.exit(1)
 
-    VIDEO_FILE = args.video_file
+    IMAGE_SEQUENCE = args.IMAGE_SEQUENCE
 
     # Rather than storing the resulting binary masks from AMFD and LRMC in memory, we opt to save them to disk.
     # Although it may be feasible to merge the AMFD and LRMC processes (and possibly the Pipeline Filter process), we decided to keep them separate.
@@ -164,22 +185,56 @@ if __name__ == "__main__":
     if not os.path.exists("processing/lrmc"):
         os.makedirs("processing/lrmc")
 
-    # The LRMC algorithm necessitates the division of the video into individual frames, as certain operating systems pose difficulties for MATLAB's video reading capabilities.
-    # However, relying solely on frames is insufficient, as knowledge of the video's frame rate is also needed.
-    if not os.path.exists("processing/frames"):
-        os.makedirs("processing/frames")
+    subprocesses = []
 
-    amfd(
-        K,
-        CONNECTIVITY,
-        AREA_MIN,
-        AREA_MAX,
-        ASPECT_RATIO_MIN,
-        ASPECT_RATIO_MAX,
-        KERNAL,
-        VIDEO_FILE,
-    )
-    lrmc(L, KERNAL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, VIDEO_FILE)
-    pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITEWISE_AND, VIDEO_FILE)
+    amfd_args = [
+        "python3",
+        "-c",
+        "from amfd import amfd; amfd({}, {}, {}, {}, {}, {}, {}, '{}')".format(
+            K,
+            CONNECTIVITY,
+            AREA_MIN,
+            AREA_MAX,
+            ASPECT_RATIO_MIN,
+            ASPECT_RATIO_MAX,
+            KERNAL,
+            IMAGE_SEQUENCE,
+        ),
+    ]
+    subprocesses.append(subprocess.Popen(amfd_args))
 
-    shutil.rmtree("processing")
+    lrmc_args = [
+        "python3",
+        "-c",
+        "from lrmc import lrmc; lrmc({}, {}, {}, {}, {}, {}, '{}')".format(
+            L,
+            KERNAL,
+            MAX_NITER_PARAM,
+            GAMMA1_PARAM,
+            GAMMA2_PARAM,
+            FRAME_RATE,
+            IMAGE_SEQUENCE,
+        ),
+    ]
+    subprocesses.append(subprocess.Popen(lrmc_args))
+
+    pf_args = [
+        "python3",
+        "-c",
+        "from pf import pf; pf({}, {}, {}, {}, '{}', {})".format(
+            PIPELINE_LENGTH,
+            PIPELINE_SIZE,
+            H,
+            BITEWISE_AND,
+            IMAGE_SEQUENCE,
+            OUTPUT_IMAGES,
+        ),
+    ]
+    subprocesses.append(subprocess.Popen(pf_args))
+
+    # signal.pause()
+
+    for p in subprocesses:
+        p.wait()
+
+    shutil.rmtree("./processing")

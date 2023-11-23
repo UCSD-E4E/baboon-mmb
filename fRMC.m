@@ -1,6 +1,6 @@
-function fRMC(max_niter, gamma1, gamma2, N, frame_count, kernel)
+function fRMC(max_niter, gamma1, gamma2, N, frame_count, kernel, dir_path)
     savePathSt = './processing/lrmc/';
-    dir_path = './processing/frames/';
+
     
     % Define structuring elements outside of the loop for efficiency
     rectangleKernel = strel('rectangle', [kernel, kernel]);
@@ -15,7 +15,7 @@ function fRMC(max_niter, gamma1, gamma2, N, frame_count, kernel)
         % Read frames
         for j = 1:N
             idx = current_frame + j - 1;
-            img_path = fullfile(dir_path, sprintf('%d.bmp', idx));
+            img_path = fullfile(dir_path, sprintf('%06d.jpg', idx));
 
             if ~exist(img_path, 'file')
                 continue; % If the file does not exist, just continue to the next iteration

@@ -43,6 +43,7 @@ You can configure the behavior of the algorithms by setting different command-li
 | gamma1_param | 0.3 | [0.0, 1.0] | Parameter gamma1 in fRMC (Background subtraction via fast robust matrix completion, Rezaei et al., 2017) |
 | gamma2_param | 0.8 | [gamma1_param, 1.0] | Parameter gamma2 in fRMC (Background subtraction via fast robust matrix completion, Rezaei et al., 2017) |
 | bitwise_and | True | {True, False} | Whether to use bitwise and vs or in Pipeline Filter |
+| output_images | False | Whether to also output images of the final bounding boxes |
 | video_file | String | path to video file | Path to video file |
 
 ### Output

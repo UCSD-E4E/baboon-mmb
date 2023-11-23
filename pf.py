@@ -3,7 +3,9 @@ Step 3: Pipeline Filter
 """
 import csv
 import os
+import shutil
 import sys
+import time
 import cv2
 import numpy as np
 
@@ -29,18 +31,20 @@ class Object(NamedTuple):
     bounding_box: BoundingBox
 
 
-def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
+def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, IMAGE_SEQUENCE, OUTPUT_IMAGES):
     def get_objects(frame: int) -> [Object]:
         """
-        Get the objects that were detected in the frame.
+        Get the objects that were detected in the frame, waiting for the images to exist.
         """
         amfd_image_path = f"processing/amfd/{frame}.bmp"
         lrmc_image_path = f"processing/lrmc/{frame}.bmp"
 
-        if not os.path.exists(amfd_image_path) or not os.path.exists(lrmc_image_path):
-            print(f"Frame {frame} does not exist in one of the processing paths.")
-            return []
+        # Wait for both images to exist
+        while not (os.path.exists(amfd_image_path) and os.path.exists(lrmc_image_path)):
+            print(f"Waiting for frame {frame} images...")
+            time.sleep(1)  # Wait for 1 second before checking again
 
+        # Proceed with image processing after the images are confirmed to exist
         amfd_image = cv2.imread(amfd_image_path)
         if amfd_image is None:
             print(f"Failed to load AMFD image for frame {frame}.")
@@ -117,16 +121,13 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
 
         return object_in_next_frames
 
-    cap = cv2.VideoCapture(VIDEO_FILE)
-    if not cap.isOpened():
-        print("Error opening video file")
+    files = sorted([f for f in os.listdir(IMAGE_SEQUENCE) if f.endswith(".jpg")])
+    if not files:
+        print("No images found in the specified folder")
         sys.exit(1)
 
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    cap.release()
+    frame_count = len(files)
+    width, height = cv2.imread(os.path.join(IMAGE_SEQUENCE, files[0])).shape[:2]
 
     # Start a CSV file to store the labels and create an ouput directory to store the images.
     with open("labels.csv", "w") as f:
@@ -142,9 +143,12 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
         # Get the objects detected in the frame i
         for objects_idx, objects in enumerate(pipeline_observations):
             if objects is None:
-                pipeline_observations[objects_idx] = get_objects(
-                    frame_idx + objects_idx
-                )
+                if frame_idx + objects_idx <= frame_count:
+                    pipeline_observations[objects_idx] = get_objects(
+                        frame_idx + objects_idx
+                    )
+                else:
+                    pipeline_observations[objects_idx] = []
 
         if pipeline_observations[0] != []:
             object_idx_next_frames = find_object_pairs(pipeline_observations)
@@ -259,11 +263,11 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
                         )
 
                     observations_to_draw[0].append(object)
-
-        color_image = cv2.imread(f"processing/frames/{frame_idx}.bmp")
-        if color_image is None:
-            print(f"Failed to load color image for frame {frame_idx}.bmp")
-            break  # Skip the current iteration if the image failed to load
+        if OUTPUT_IMAGES:
+            color_image = cv2.imread(os.path.join(IMAGE_SEQUENCE, files[frame_idx - 1]))
+            if color_image is None:
+                print(f"Failed to load color image for frame {frame_idx}.bmp")
+                break  # Skip the current iteration if the image failed to load
 
         for object in observations_to_draw[0]:
             if object is not None:
@@ -278,9 +282,11 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
                     writer = csv.writer(f)
                     writer.writerow([frame_idx, x, y, w, h])
                 # Draw the rectangle on the image
-                cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                if OUTPUT_IMAGES:
+                    cv2.rectangle(color_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        cv2.imwrite(f"output/{frame_idx}.bmp", color_image)
+        if OUTPUT_IMAGES:
+            cv2.imwrite(f"output/{frame_idx}.bmp", color_image)
 
         for objects_idx in range(PIPELINE_LENGTH):
             pipeline_observations[objects_idx] = pipeline_observations[
@@ -295,7 +301,5 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, VIDEO_FILE):
             ].copy()
 
         observations_to_draw[PIPELINE_LENGTH] = [None]
-
-        os.remove(f"processing/frames/{frame_idx}.bmp")
 
     f.close()
