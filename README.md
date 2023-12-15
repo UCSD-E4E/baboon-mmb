@@ -9,18 +9,18 @@ Please note that this is not the original implementation by the authors, as thei
 ## Getting Started
 
 ### Prerequisites
-- Python 3.12 or higher
+- Python 3.8 or higher
   -  numpy 1.23.5
   - opencv_contrib_python 4.7.0.68
   - opencv_python 4.7.0.68
   - scipy 1.11.3
-- MatLab R2023b or higher
-  - Image Processing Toolbox 23.2
+- Octave
+  - Octave-Image
 
 ### Running the Code
 To run the project with the default parameters, use the following command:
 ```bash
-python3.12 main.py <path_to_video>
+python3 main.py <path_to_video>
 ```
 ### Configuration
 
@@ -55,7 +55,7 @@ The output of the program is a csv file containing the following columns:
 
 ### Example
 ```bash
-python3.12 main.py --k 4 --connectivity 8 --area_min 5 --area_max 80 --aspect_ratio_min 1.0 --aspect_ratio_max 6.0 --l 4 --kernel 3 <path_to_video>
+python3 main.py --k=4 --connectivity=8 --area_min=5 --area_max=80 --aspect_ratio_min=1.0 --aspect_ratio_max=6.0 --l=4 --kernel=3 <path_to_video>
 ```
 
 ## Citations

@@ -19,6 +19,6 @@ def lrmc(
 
     N = frame_count / (L * FRAME_RATE)
 
-    lrmc_script = f"fRMC({MAX_NITER_PARAM}, {GAMMA1_PARAM}, {GAMMA2_PARAM}, {N}, {frame_count}, {KERNAL}, '{IMAGE_SEQUENCE}')"
-    command = ["matlab", "-nodisplay", "-nosplash", "-r", f"{lrmc_script}; exit"]
+    lrmc_script = f"pkg load image; fRMC({MAX_NITER_PARAM}, {GAMMA1_PARAM}, {GAMMA2_PARAM}, {N}, {frame_count}, {KERNAL}, '{IMAGE_SEQUENCE}')"
+    command = ["octave", "--eval", lrmc_script]
     subprocess.run(command)
