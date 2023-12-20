@@ -1,0 +1,5 @@
+#! /bin/bash
+killall "tmux: client"
+rm -rf ./processing
+rm labels.csv
+rm octave-workspace

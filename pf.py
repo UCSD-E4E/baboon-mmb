@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 from typing import NamedTuple
 
@@ -41,7 +42,7 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, IMAGE_SEQUENCE, OUTPUT_IM
 
         # Wait for both images to exist
         while not (os.path.exists(amfd_image_path) and os.path.exists(lrmc_image_path)):
-            print(f"Waiting for frame {frame} images...")
+            #print(f"Waiting for frame {frame} images...")
             time.sleep(1)  # Wait for 1 second before checking again
 
         # Proceed with image processing after the images are confirmed to exist
@@ -139,7 +140,7 @@ def pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, BITWISE_AND, IMAGE_SEQUENCE, OUTPUT_IM
     # Start an array that contains Object observation for the [n'th, n-1'th, ..., n-PIPELINE_LENGTH + 1'th ] frames.
     pipeline_observations = [None for _ in range(PIPELINE_LENGTH + 1)]
     observations_to_draw = [[None] for _ in range(PIPELINE_LENGTH + 1)]
-    for frame_idx in range(1, frame_count + 1):
+    for frame_idx in tqdm(range(1, frame_count + 1)):
         # Get the objects detected in the frame i
         for objects_idx, objects in enumerate(pipeline_observations):
             if objects is None:
