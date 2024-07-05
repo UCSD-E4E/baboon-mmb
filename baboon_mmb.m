@@ -29,7 +29,7 @@ function baboon_mmb(varargin)
         error('GAMMA1_PARAM must be less than GAMMA2_PARAM');
     end
 
-    imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
+    % imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
 
     % amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, imageSequence);
     % saveMasks(amfdMasks, 'output/amfd');
@@ -41,20 +41,20 @@ function baboon_mmb(varargin)
     % save('output/lrmcMasks.mat', 'lrmcMasks');
     % clear lrmcMasks;
     
-    load('output/amfdMasks.mat', 'amfdMasks');
-    load('output/lrmcMasks.mat', 'lrmcMasks');
-    combinedMasks = combineMasks(amfdMasks, lrmcMasks); 
-    saveMasks(combinedMasks, 'output/combinedMasks');
-    save('output/combinedMasks.mat', 'combinedMasks');
-    clear amfdMasks lrmcMasks;
+    % load('output/amfdMasks.mat', 'amfdMasks');
+    % load('output/lrmcMasks.mat', 'lrmcMasks');
+    % combinedMasks = combineMasks(amfdMasks, lrmcMasks); 
+    % saveMasks(combinedMasks, 'output/combinedMasks');
+    % save('output/combinedMasks.mat', 'combinedMasks');
+    % clear amfdMasks lrmcMasks combinedMasks;
    
-    
+    load 'output/combinedMasks.mat';
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
-    save('output/objects.mat', 'objects');
+    % save('output/objects.mat', 'objects');
 
-    saveObjectsToTxt(objects, 'output/objects.txt');
+    % saveObjectsToTxt(objects, 'output/objects.txt');
 
-    drawBoundingBoxesOnFrames(imageSequence, objects, 'output/frames');
+    % drawBoundingBoxesOnFrames(imageSequence, objects, 'output/frames');
 end 
 
 function imageSequence = loadImageSequence(imagePath)
@@ -65,9 +65,9 @@ function imageSequence = loadImageSequence(imagePath)
         [~, idx] = sort({files.name});
         files = files(idx);
         imageSequence = cell(1, numel(files));
-        for i = 1:numel(files)
-            imageSequence{i} = imread(fullfile(imagePath, files(i).name));
-            printProgressBar(i, numel(files), startTime);  % Call to function that prints the progress bar
+        for fileIdx = 1:numel(files)
+            imageSequence{fileIdx} = imread(fullfile(imagePath, files(fileIdx).name));
+            printProgressBar(fileIdx, numel(files), startTime);  % Call to function that prints the progress bar
         end
     else
         error('Image sequence folder is not specified or does not exist.');
@@ -84,12 +84,12 @@ function saveMasks(output, outputDir)
 
     % Loop through each frame in the output
     numFrames = numel(output);
-    for i = 1:numFrames
-        if ~isempty(output{i}) % Ensure there is data to write
-            filename = fullfile(outputDir, sprintf('%06d.png', i));
-            imwrite(output{i}, filename, 'png');
+    for frameIdx = 1:numFrames
+        if ~isempty(output{frameIdx}) % Ensure there is data to write
+            filename = fullfile(outputDir, sprintf('%06d.png', frameIdx));
+            imwrite(output{frameIdx}, filename, 'png');
         end
-        printProgressBar(i, numFrames, startTime);  % Call to function that prints the progress bar
+        printProgressBar(frameIdx, numFrames, startTime);  % Call to function that prints the progress bar
     end
 end
 
@@ -103,9 +103,9 @@ function drawBoundingBoxesOnFrames(imageSequence, objects, outputFolder)
 
     frameObjects = containers.Map('KeyType', 'int32', 'ValueType', 'any');
     
-    for i = 1:numel(objects)
-        frameIdx = objects{i}{1};
-        bbox = [objects{i}{2}, objects{i}{3}, objects{i}{4}, objects{i}{5}];
+    for objectIdx = 1:numel(objects)
+        frameIdx = objects{objectIdx}{1};
+        bbox = [objects{objectIdx}{2}, objects{objectIdx}{3}, objects{objectIdx}{4}, objects{objectIdx}{5}];
         if isKey(frameObjects, frameIdx)
             frameObjects(frameIdx) = [frameObjects(frameIdx); bbox];
         else
@@ -136,13 +136,13 @@ function combinedMasks = combineMasks(mask1, mask2)
     startTime = tic;
     numFrames = numel(mask1);
     combinedMasks = cell(1, numFrames);
-    for i = 1:numFrames
-        if ~isempty(mask1{i}) && ~isempty(mask2{i})
-            combinedMasks{i} = mask1{i} & mask2{i};
+    for frameIdx = 1:numFrames
+        if ~isempty(mask1{frameIdx}) && ~isempty(mask2{frameIdx})
+            combinedMasks{frameIdx} = mask1{frameIdx} & mask2{frameIdx};
         else 
             error('Masks frame counts do not match.')
         end
-        printProgressBar(i, numFrames, startTime);  % Call to function that prints the progress bar
+        printProgressBar(frameIdx, numFrames, startTime);  % Call to function that prints the progress bar
     end
 end
 
@@ -150,9 +150,9 @@ function saveObjectsToTxt(objects, filename)
     fprintf('Saving objects to text file...\n');
     startTime = tic;
     fileID = fopen(filename, 'w');
-    for i = 1:numel(objects)
-        fprintf(fileID, '%d, -1, %d, %d, %d, %d, 1, -1, -1, -1\n', objects{i}{1}, objects{i}{2}, objects{i}{3}, objects{i}{4}, objects{i}{5});
-        printProgressBar(i, numel(objects), startTime);  % Call to function that prints the progress bar
+    for objectIdx = 1:numel(objects)
+        fprintf(fileID, '%d, -1, %d, %d, %d, %d, 1, -1, -1, -1\n', objects{objectIdx}{1}, objects{objectIdx}{2}, objects{objectIdx}{3}, objects{objectIdx}{4}, objects{objectIdx}{5});
+        printProgressBar(objectIdx, numel(objects), startTime);  % Call to function that prints the progress bar
     end
     fclose(fileID);
 end

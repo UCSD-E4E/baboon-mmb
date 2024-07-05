@@ -9,12 +9,12 @@ function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, F
 
     oldWarningState = warning('off', 'Octave:divide-by-zero');
 
-    for i = 1:numFrames
+    for frameIdx = 1:numFrames
         imArray = [];
 
         % Collect frames
         for j = 1:N
-            idx = i + j - 1;
+            idx = frameIdx + j - 1;
             if idx > numFrames
                 break;  % If the index is out of bounds, break the loop
             end
@@ -23,12 +23,12 @@ function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, F
 
         % If there are not enough frames, continue to the next iteration
         if size(imArray, 3) < 2
-            output{i} = zeros(size(imArray(:, :, 1)), 'uint8');
+            output{frameIdx} = zeros(size(imArray(:, :, 1)), 'uint8');
             continue;
         end
 
         % Process the frame and save the mask
-        output{i} = processFrame(imArray, GAMMA1_PARAM, GAMMA2_PARAM, MAX_NITER_PARAM, se);
+        output{frameIdx} = processFrame(imArray, GAMMA1_PARAM, GAMMA2_PARAM, MAX_NITER_PARAM, se);
         printProgressBar(i, numFrames, startTime);  % Update progress bar
     end
 

@@ -37,11 +37,11 @@ function output = amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, AS
         % Connected components and properties
         labeledImage = bwlabel(binaryImage, CONNECTIVITY);
         props = regionprops(labeledImage, 'Area', 'BoundingBox');
-        for i = 1:length(props)
-            bb = props(i).BoundingBox;
+        for propIdx = 1:length(props)
+            bb = props(propIdx).BoundingBox;
             aspectRatio = bb(3) / bb(4);
-            if props(i).Area < AREA_MIN || props(i).Area > AREA_MAX || aspectRatio < ASPECT_RATIO_MIN || aspectRatio > ASPECT_RATIO_MAX
-                binaryImage(labeledImage == i) = 0;
+            if props(propIdx).Area < AREA_MIN || props(propIdx).Area > AREA_MAX || aspectRatio < ASPECT_RATIO_MIN || aspectRatio > ASPECT_RATIO_MAX
+                binaryImage(labeledImage == propIdx) = 0;
             end
         end
 
