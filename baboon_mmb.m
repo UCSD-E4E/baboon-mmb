@@ -1,72 +1,79 @@
-function results = baboon_mmb(varargin)
+function objects = baboon_mmb(varargin)
     p = inputParser;
 
     addParameter(p, 'K', 4, @(x) x >= 0 && x <= 8);
     addParameter(p, 'CONNECTIVITY', 8, @(x) any(x == [4, 8]));
-    addParameter(p, 'AREA_MIN', 5, @(x) x >= 0);
-    addParameter(p, 'AREA_MAX', 80, @(x) x > 5 && x <= 100);
-    addParameter(p, 'ASPECT_RATIO_MIN', 1.0, @(x) x >= 0);
-    addParameter(p, 'ASPECT_RATIO_MAX', 6.0, @(x) x > 1 && x <= 10);
+    addParameter(p, 'AREA_MIN', 5, @(x) x >= 0 && x <= 100);
+    addParameter(p, 'AREA_MAX', 80, @(x) x >= 0 && x <= 100);
+    addParameter(p, 'ASPECT_RATIO_MIN', 1, @(x) x >= 0 && x <= 10);
+    addParameter(p, 'ASPECT_RATIO_MAX', 6, @(x) x >= 0 && x <= 10);
     addParameter(p, 'L', 4, @(x) x >= 1 && x <= 10);
-    addParameter(p, 'KERNEL', 3, @(x) any(x == [1, 3, 5, 7, 9, 11]));
+    addParameter(p, 'KERNEL', 3, @(x) x >= 1  && x <= 11);
     addParameter(p, 'BITWISE_OR', false, @(x) islogical(x) || isnumeric(x));
     addParameter(p, 'PIPELINE_LENGTH', 5, @(x) x >= 1 && x <= 10);
-    addParameter(p, 'PIPELINE_SIZE', 7, @(x) any(x == [3, 5, 7, 9, 11]));
-    addParameter(p, 'H', 3, @(x) x >= 1);
+    addParameter(p, 'PIPELINE_SIZE', 7, @(x) x >= 3 && x <= 11);
+    addParameter(p, 'H', 3, @(x) x >= 1 && x <= 10);
     addParameter(p, 'MAX_NITER_PARAM', 10, @(x) x >= 1 && x <= 20);
-    addParameter(p, 'GAMMA1_PARAM', 0.8, @(x) x >= 0.0 && x <= 1.0);
-    addParameter(p, 'GAMMA2_PARAM', 0.8, @(x) x >= 0.8 && x <= 1.0);
+    addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 10);
+    addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 10);
     addParameter(p, 'FRAME_RATE', 10, @(x) x >= 1);
     addParameter(p, 'IMAGE_SEQUENCE', '', @ischar);
 
     parse(p, varargin{:});
     args = p.Results;
 
-    if args.ASPECT_RATIO_MIN >= args.ASPECT_RATIO_MAX
-        error('ASPECT_RATIO_MIN must be less than ASPECT_RATIO_MAX');
+    args.GAMMA1_PARAM = args.GAMMA1_PARAM / 10;
+    args.GAMMA2_PARAM = args.GAMMA2_PARAM / 10;
+   
+
+    % Define an empty objects structure
+    emptyObjects = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
+
+    % Validate parameters
+    if args.AREA_MIN > args.AREA_MAX
+        objects = emptyObjects;
+        return;
+    end
+
+    if args.ASPECT_RATIO_MIN > args.ASPECT_RATIO_MAX
+        objects = emptyObjects;
+        return;
+    end
+
+    if args.H > args.PIPELINE_LENGTH
+        objects = emptyObjects;
+        return;
     end
 
     if args.GAMMA1_PARAM > args.GAMMA2_PARAM
-        error('GAMMA1_PARAM must be less than GAMMA2_PARAM');
+        objects = emptyObjects;
+        return;
     end
 
-    imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
-    grayFrames = cellfun(@(x) rgb2gray(x), imageSequence, 'UniformOutput', false);
+    % imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
+    % grayFrames = cellfun(@(x) rgb2gray(x), imageSequence, 'UniformOutput', false);
 
-    amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
-    saveMasks(amfdMasks, 'output/amfd');
+    % amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
+    % saveMasks(amfdMasks, 'output/amfd');
     % save('output/amfdMasks.mat', 'amfdMasks');
 
-    lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
-    saveMasks(lrmcMasks, 'output/lrmc');
+    %lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
+    % saveMasks(lrmcMasks, 'output/lrmc');
     % save('output/lrmcMasks.mat', 'lrmcMasks');
     
     % load('output/amfdMasks.mat', 'amfdMasks');
     % load('output/lrmcMasks.mat', 'lrmcMasks');
-    combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
-    saveMasks(combinedMasks, 'output/combinedMasks');
+    % combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
+    % saveMasks(combinedMasks, 'output/combinedMasks');
     % save('output/combinedMasks.mat', 'combinedMasks');
     
-    % load('output/combinedMasks.mat', 'combinedMasks');
+    load('output/combinedMasks.mat', 'combinedMasks');
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
     % save('output/objects.mat', 'objects');
 
     % saveObjectsToTxt(objects, 'output/objects.txt');
 
     % drawBoundingBoxesOnFrames(imageSequence, objects, 'output/frames');
-
-    objStructArray = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
-    for objectIdx = 1:numel(objects)
-        obj = objects(objectIdx);
-        objStructArray(objectIdx).frameNumber = obj.frameNumber;
-        objStructArray(objectIdx).id = obj.id;
-        objStructArray(objectIdx).x = obj.x;
-        objStructArray(objectIdx).y = obj.y;
-        objStructArray(objectIdx).width = obj.width;
-        objStructArray(objectIdx).height = obj.height;
-    end
-
-    results = struct('objects', objStructArray);
 end 
 
 function imageSequence = loadImageSequence(imagePath)
