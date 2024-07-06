@@ -13,8 +13,8 @@ params.PIPELINE_LENGTH = 5;
 params.PIPELINE_SIZE = 7;
 params.H = 3;
 params.MAX_NITER_PARAM = 10;
-params.GAMMA1_PARAM = 0.8;
-params.GAMMA2_PARAM = 0.8;
+params.GAMMA1_PARAM = 8;
+params.GAMMA2_PARAM = 8;
 params.FRAME_RATE = 10;
 params.IMAGE_SEQUENCE = 'path/to/your/image_sequence';
 
@@ -62,7 +62,7 @@ largeCost = 1e6;
 for frame = uniqueFrames
     % Get bojects from the current frame
     gtObjects = groundTruthData([groundTruthData.frameNumber] == frame);
-    detectedObjects = dectectedData([detectedData.frameNumber] == frame);
+    detectedObjects = detectedData([detectedData.frameNumber] == frame);
 
     % Create cost matrix for object matching
     numGt = length(gtObjects);
@@ -74,6 +74,7 @@ for frame = uniqueFrames
             % Calculate IoU (Intersection over Union)
             bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
             bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+            overlapRatio = bboxOverlapRatio(bbGt, bbDet);
             if overlapRatio > 0
                 costMatrix(i, j) = 1 - overlapRatio;
             end
@@ -89,7 +90,11 @@ for frame = uniqueFrames
     FN = FN + length(unassignedRows);
 end
 
-% Display results
-fprintf('True Positives: %d\n', TP);
-fprintf('False Positives: %d\n', FP);
-fprintf('False Negatives: %d\n', FN);
+precision = TP / (TP + FP);
+recall = TP / (TP + FN);
+f1Score = 2 * (precision * recall) / (precision + recall);
+
+% Display the evaluation metrics
+fprintf('Precision: %.2f\n', precision);
+fprintf('Recall: %.2f\n', recall);
+fprintf('F1 Score: %.2f\n', f1Score);
