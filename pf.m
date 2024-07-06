@@ -1,42 +1,117 @@
 function output = pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, combinedMasks)
     fprintf('Running the Pipeline Filter...\n');
-    startTime = tic;
 
     % Buffer to store recent frame data
-    buffer = cell(PIPELINE_SIZE + 1, 1);
-
-    % Initialize output storage for confirmed objects
-    output = [];
+    buffer = cell(PIPELINE_LENGTH + 1, 1);
     totalFrames = numel(combinedMasks);
+    output = [];
 
-    % Iterate over the video frames
+    % Precompute frame data for all frames
+    frameData = cell(totalFrames, 1);
+    for i = 1:totalFrames
+        frameData{i} = computeFrameData(combinedMasks{i});
+    end
+
+    % Initialize buffer with the first set of frames
+    buffer(1:min(PIPELINE_LENGTH + 1, totalFrames)) = frameData(1:min(PIPELINE_LENGTH + 1, totalFrames));
+
+    % Process each frame
     for currentFrame = 1:totalFrames
-        endFrame = min(currentFrame + PIPELINE_LENGTH, totalFrames);
+        % Assign unique IDs to objects in the first buffer slot
+        if ~isempty(buffer{1})
+            for objIdx = 1:numel(buffer{1})
+                buffer{1}(objIdx).id = objIdx;
+            end
+        end
 
-        if currentFrame == 1 % Fill the buffer initially
-            for bufferIdx = currentFrame:endFrame
-                if bufferIdx > totalFrames
-                    buffer{bufferIdx - currentFrame + 1} = computeFrameData(zeros(size(combinedMasks, 1), size(combinedMasks, 2)));
-                else
-                    buffer{bufferIdx - currentFrame + 1} = computeFrameData(combinedMasks{bufferIdx});
+        % Reset all other IDs to -1
+        for bufIdx = 2:numel(buffer)
+            if ~isempty(buffer{bufIdx})
+                [buffer{bufIdx}.id] = deal(-1);
+            end
+        end
+
+        % Optimal assignment for subsequent buffer slots
+        for bufIdx = 2:numel(buffer)
+            if ~isempty(buffer{bufIdx}) && ~isempty(buffer{1})
+                costMatrix = computeCostMatrix(buffer{1}, buffer{bufIdx});
+                largeCost = 1e6;  % A large cost for unmatched assignments
+                [assignments, ~] = matchpairs(costMatrix, largeCost);
+
+                for objIdx = 1:size(assignments, 1)
+                    if assignments(objIdx, 2) > 0
+                        % Get the matched objects
+                        obj1 = buffer{1}(assignments(objIdx, 1));
+                        obj2 = buffer{bufIdx}(assignments(objIdx, 2));
+
+                        % Check the conditions before assigning the ID
+                        if 0 < abs(obj1.cx - obj2.cx) && abs(obj1.cx - obj2.cx) < PIPELINE_SIZE && 0 < abs(obj1.cy - obj2.cy) && abs(obj1.cy - obj2.cy) < PIPELINE_SIZE
+                            buffer{bufIdx}(assignments(objIdx, 2)).id = obj1.id;
+                        end
+                    end
+                end
+            end
+        end
+        
+        % Check for objects in buffer{1} that have at least H matching objects in buffers {2} to {numel(buffer)}
+        for objIdx = 1:numel(buffer{1})
+            obj1 = buffer{1}(objIdx);
+            matchCount = 0;
+            matchBuffers = false(1, numel(buffer) - 1);
+
+            for bufIdx = 2:numel(buffer)
+                if ~isempty(buffer{bufIdx}) && any([buffer{bufIdx}.id] == obj1.id)
+                    matchCount = matchCount + 1;
+                    matchBuffers(bufIdx - 1) = true;
+                end
+            end
+
+            if matchCount >= H
+                obj1.frameNumber = currentFrame;
+                output = [output, obj1]; %#ok<AGROW>
+
+                % Interpolate positions for missing assignments
+                for bufIdx = 2:numel(buffer)
+                    if ~matchBuffers(bufIdx - 1)
+                        % Linear interpolation based on surrounding frames
+                        prevBuffer = find(matchBuffers(1:bufIdx-1), 1, 'last') + 1;
+                        nextBuffer = find(matchBuffers(bufIdx:end), 1, 'first') + bufIdx;
+                        
+                        if isempty(prevBuffer)
+                            % Use obj1 itself for previous data if no previous buffer
+                            prevBuffer = 1;
+                            prevObj = obj1;
+                        else 
+                            prevObj = buffer{prevBuffer}(arrayfun(@(x) x.id == obj1.id, buffer{prevBuffer}));
+                        end
+
+                        if ~isempty(nextBuffer)
+                            nextObj = buffer{nextBuffer}(arrayfun(@(x) x.id == obj1.id, buffer{nextBuffer}));
+
+                            % Interpolate position 
+                            alpha = (bufIdx - prevBuffer) / (nextBuffer - prevBuffer);
+                            interpolatedObj = obj1;
+                            interpolatedObj.x = round((1 - alpha) * prevObj.x + alpha * nextObj.x);
+                            interpolatedObj.y = round((1 - alpha) * prevObj.y + alpha * nextObj.y);
+                            interpolatedObj.width = round((1 - alpha) * prevObj.width + alpha * nextObj.width);
+                            interpolatedObj.height = round((1 - alpha) * prevObj.height + alpha * nextObj.height);
+                            interpolatedObj.cx = (1 - alpha) * prevObj.cx + alpha * nextObj.cx;
+                            interpolatedObj.cy = (1 - alpha) * prevObj.cy + alpha * nextObj.cy;
+
+                            buffer{bufIdx} = [buffer{bufIdx}, interpolatedObj]; 
+                        end
+                    end
                 end
             end
         end
 
-        % Print out all bounding boxes in buffer for debugging (first frame in buffer)
-        for i = 1:numel(buffer{1})
-            fprintf('Frame %d: Object %d: x=%d, y=%d, width=%d, height=%d\n', currentFrame, i, buffer{1}(i).x, buffer{1}(i).y, buffer{1}(i).width, buffer{1}(i).height);
-        end
-
-
-
-        % Shift the buffer
+        % Shift buffer and add new frame data
         buffer(1:end-1) = buffer(2:end);
-
-        if endFrame + 1 <= totalFrames
-            buffer{end} = computeFrameData(combinedMasks{endFrame + 1});
+        nextFrameIdx = currentFrame + PIPELINE_LENGTH + 1;
+        if nextFrameIdx <= totalFrames
+            buffer{end} = computeFrameData(combinedMasks{nextFrameIdx});
         else
-            buffer{end} = computeFrameData(zeros(size(combinedMasks, 1), size(combinedMasks, 2)));
+            buffer{end} = computeFrameData(zeros(size(combinedMasks{1})));
         end
     end
 end
@@ -44,58 +119,34 @@ end
 function frameData = computeFrameData(frame)
     labeledImage = bwlabel(frame);
     props = regionprops(labeledImage, 'BoundingBox');
+    numProps = numel(props);
 
-    if isempty(props)
-        % Initialize with default values if no regions are found
-        frameData = struct('id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
+    % Initialize frameData structure
+    if numProps == 0
+        frameData = struct('id', {}, 'frameNumber', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {}, 'cx', {}, 'cy', {});
     else
-        % Convert props to a structured array
-        numProps = numel(props);
-        frameData(numProps).id = [];
-        frameData(numProps).x = [];
-        frameData(numProps).y = [];
-        frameData(numProps).width = [];
-        frameData(numProps).height = [];
-        for propIdx = 1:numProps
-            bb = props(propIdx).BoundingBox;
-            frameData(propIdx).id = -1;
-            frameData(propIdx).x = bb(1);
-            frameData(propIdx).y = bb(2);
-            frameData(propIdx).width = bb(3);
-            frameData(propIdx).height = bb(4);
+        frameData = struct('id', -1, 'frameNumber', -1, 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+        for i = 1:numProps
+            bb = floor(props(i).BoundingBox);
+            frameData(i).x = bb(1);
+            frameData(i).y = bb(2);
+            frameData(i).width = bb(3);
+            frameData(i).height = bb(4);
+            frameData(i).cx = bb(1) + bb(3) / 2;
+            frameData(i).cy = bb(2) + bb(4) / 2;
         end
     end
 end
 
+function costMatrix = computeCostMatrix(objects1, objects2)
+    numObjects1 = numel(objects1);
+    numObjects2 = numel(objects2);
+    costMatrix = zeros(numObjects1, numObjects2);
 
-function printProgressBar(currentStep, totalSteps, startTime)
-    % Calculate percentage completion
-    percentage = 100 * (currentStep / totalSteps);
-    barLength = floor(50 * (currentStep / totalSteps));  % Length of the progress bar in characters
-    bar = repmat('#', 1, barLength);  % Create the progress bar
-    spaces = repmat(' ', 1, 50 - barLength);  % Spaces to fill the rest of the bar
-    
-    % Calculate elapsed time and estimate remaining time
-    elapsedTime = toc(startTime);
-    remainingTime = elapsedTime / currentStep * (totalSteps - currentStep);
-    
-    % Format remaining time as HH:MM:SS
-    hours = floor(remainingTime / 3600);
-    mins = floor(mod(remainingTime, 3600) / 60);
-    secs = floor(mod(remainingTime, 60));
-    
-    % Clear the previous line before printing new progress information
-    if currentStep > 1  % Avoid clearing if it's the first step
-        fprintf('\033[A\033[K');  % Move cursor up one line and clear line
-    end
-    
-    % Print progress bar with time estimate
-    fprintf('[%s%s] %3.0f%% - Elapsed: %02d:%02d:%02d, Remaining: %02d:%02d:%02d\n', ...
-            bar, spaces, percentage, ...
-            floor(elapsedTime / 3600), mod(floor(elapsedTime / 60), 60), mod(elapsedTime, 60), ...
-            hours, mins, secs);
-
-    if currentStep == totalSteps
-        fprintf('\n');  % Move to the next line after completion
+    for i = 1:numObjects1
+        for j = 1:numObjects2
+            % Using Euclidean distance as the cost metric
+            costMatrix(i, j) = sqrt((objects1(i).x - objects2(j).x)^2 + (objects1(i).y - objects2(j).y)^2);
+        end
     end
 end
