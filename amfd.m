@@ -32,7 +32,7 @@ function output = amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, AS
         binaryImage = imclose(imopen(Id >= T, se), se);
 
         % Connected components and properties
-        labeledImage = bwlabel(binaryImage, double(CONNECTIVITY));
+        labeledImage = bwlabel(binaryImage, CONNECTIVITY);
         props = regionprops(labeledImage, 'Area', 'BoundingBox');
         
         for propIdx = 1:length(props)
