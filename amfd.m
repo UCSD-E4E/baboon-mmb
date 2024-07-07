@@ -1,5 +1,5 @@
 function output = amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX, KERNEL, grayFrames)
-    fprintf('Processing frames using AMFD...\n\n');
+    % fprintf('Processing frames using AMFD...\n');
     numFrames = numel(grayFrames);
     [height, width] = size(grayFrames{1});
     output = cell(1, numFrames);

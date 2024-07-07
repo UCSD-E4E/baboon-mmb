@@ -1,5 +1,5 @@
 function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, FRAME_RATE, grayFrames)
-    fprintf('Processing frames using LRMC...\n');
+    % fprintf('Processing frames using LRMC...\n');
     numFrames = numel(grayFrames);
     N = max(1, floor(numFrames / (L * FRAME_RATE)));  % Ensure N is at least 1
 

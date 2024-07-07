@@ -126,7 +126,6 @@ function [Z,E]= InfaceExtFrankWolfe(X, gamma1, gamma2, MaxIter)
     % rank_est=rank(Z) %estimation rank
     % err_est_percentage = sqrt(sum((X(S)-Z(S)).^2)/(norm(X(S))^2))*100; %error on known valuse
     E=X-Z;
-    close(wb)
     end
     
     function [u,d,v]=svd_thin(x)

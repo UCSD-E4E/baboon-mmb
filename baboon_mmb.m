@@ -14,18 +14,14 @@ function objects = baboon_mmb(varargin)
     addParameter(p, 'PIPELINE_SIZE', 7, @(x) x >= 3 && x <= 11);
     addParameter(p, 'H', 3, @(x) x >= 1 && x <= 10);
     addParameter(p, 'MAX_NITER_PARAM', 10, @(x) x >= 1 && x <= 20);
-    addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 10);
-    addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 10);
+    addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 1);
+    addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 1);
     addParameter(p, 'FRAME_RATE', 10, @(x) x >= 1);
     addParameter(p, 'IMAGE_SEQUENCE', '', @ischar);
 
     parse(p, varargin{:});
     args = p.Results;
-
-    args.GAMMA1_PARAM = args.GAMMA1_PARAM / 10;
-    args.GAMMA2_PARAM = args.GAMMA2_PARAM / 10;
    
-
     % Define an empty objects structure
     emptyObjects = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
 
@@ -78,7 +74,7 @@ function objects = baboon_mmb(varargin)
 end 
 
 function imageSequence = loadImageSequence(imagePath)
-    fprintf('Loading image sequence...\n');
+    % fprintf('Loading image sequence...\n');
     if ~isempty(imagePath)
         files = dir(fullfile(imagePath, '*.jpg'));
         [~, idx] = sort({files.name});
@@ -106,7 +102,7 @@ function saveMasks(output, outputDir)
 end
 
 function combinedMasks = combineMasks(mask1, mask2, bitwise_or) 
-    fprintf('Combining masks...\n');
+    % fprintf('Combining masks...\n');
     numFrames = numel(mask1);
     combinedMasks = cell(1, numFrames);
     for frameIdx = 1:numFrames

@@ -1,5 +1,5 @@
 function output = pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, combinedMasks)
-    fprintf('Running the Pipeline Filter...\n');
+    % fprintf('Running the Pipeline Filter...\n');
 
     % Buffer to store recent frame data
     buffer = cell(PIPELINE_LENGTH + 1, 1);

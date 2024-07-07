@@ -136,3 +136,9 @@ output/
 img/
 input/
 .vs_code/
+.vscode/
+unresolvedSymbols.txt
+requiredMCRProducts.txt
+readme.txt
+optimizeExecutable.exe
+includedSupportPackages.txt
