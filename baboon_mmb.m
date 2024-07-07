@@ -50,26 +50,26 @@ function objects = baboon_mmb(varargin)
         return;
     end
 
-    % imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
-    % grayFrames = cellfun(@(x) rgb2gray(x), imageSequence, 'UniformOutput', false);
+    imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);
+    grayFrames = cellfun(@(x) rgb2gray(x), imageSequence, 'UniformOutput', false);
 
-    % amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
+    amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
     % saveMasks(amfdMasks, 'output/amfd');
-    % save('output/amfdMasks.mat', 'amfdMasks');
+    save('output/amfdMasks.mat', 'amfdMasks');
 
-    %lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
+    lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
     % saveMasks(lrmcMasks, 'output/lrmc');
-    % save('output/lrmcMasks.mat', 'lrmcMasks');
+    save('output/lrmcMasks.mat', 'lrmcMasks');
     
     % load('output/amfdMasks.mat', 'amfdMasks');
     % load('output/lrmcMasks.mat', 'lrmcMasks');
-    % combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
+    combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
     % saveMasks(combinedMasks, 'output/combinedMasks');
-    % save('output/combinedMasks.mat', 'combinedMasks');
+    save('output/combinedMasks.mat', 'combinedMasks');
     
-    load('output/combinedMasks.mat', 'combinedMasks');
+    % load('output/combinedMasks.mat', 'combinedMasks');
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
-    % save('output/objects.mat', 'objects');
+    save('output/objects.mat', 'objects');
 
     % saveObjectsToTxt(objects, 'output/objects.txt');
 
