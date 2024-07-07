@@ -34,6 +34,11 @@ function f1Score = evaluateParams(params)
     % Initialize counters
     TP = 0; FP = 0; FN = 0;
     
+    % Handle case where detectedData is empty
+    if isempty(detectedData)
+        detectedData = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+    end
+    
     % Unique frames
     uniqueFrames = unique([groundTruthData.frameNumber, [detectedData.frameNumber]]);
     largeCost = 1e6;

@@ -70,6 +70,7 @@ function objects = baboon_mmb(varargin)
     % load('output/combinedMasks.mat', 'combinedMasks');
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
     save('output/objects.mat', 'objects');
+    % load('output/objects.mat', 'objects');
 
     % saveObjectsToTxt(objects, 'output/objects.txt');
 
