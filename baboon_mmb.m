@@ -51,21 +51,36 @@ function objects = baboon_mmb(varargin)
 
     amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
     % saveMasks(amfdMasks, 'output/amfd');
-    save('output/amfdMasks.mat', 'amfdMasks');
+    % save('output/amfdMasks.mat', 'amfdMasks');
+
+    if ~any(cellfun(@(x) any(x(:)), amfdMasks)) && ~args.BITWISE_OR
+        objects = emptyObjects;
+        return;
+    end
 
     lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
     % saveMasks(lrmcMasks, 'output/lrmc');
-    save('output/lrmcMasks.mat', 'lrmcMasks');
+    % save('output/lrmcMasks.mat', 'lrmcMasks');
     
+    if ~any(cellfun(@(x) any(x(:)), lrmcMasks)) && ~args.BITWISE_OR
+        objects = emptyObjects;
+        return;
+    end
+
     % load('output/amfdMasks.mat', 'amfdMasks');
     % load('output/lrmcMasks.mat', 'lrmcMasks');
     combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
     % saveMasks(combinedMasks, 'output/combinedMasks');
-    save('output/combinedMasks.mat', 'combinedMasks');
+    % save('output/combinedMasks.mat', 'combinedMasks');
+
+    if ~any(cellfun(@(x) any(x(:)), combinedMasks))
+        objects = emptyObjects;
+        return;
+    end
     
     % load('output/combinedMasks.mat', 'combinedMasks');
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
-    save('output/objects.mat', 'objects');
+    % save('output/objects.mat', 'objects');
     % load('output/objects.mat', 'objects');
 
     % saveObjectsToTxt(objects, 'output/objects.txt');

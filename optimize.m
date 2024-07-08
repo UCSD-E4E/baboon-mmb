@@ -20,17 +20,17 @@ function optimize()
     function f1Score = evaluateParams(params)
         % Call the baboon_mmb function with given parameters
         detectedData = baboon_mmb('K', params.K, 'CONNECTIVITY', 8, ...
-                             'AREA_MIN', params.AREA_MIN, 'AREA_MAX', params.AREA_MAX, ...
-                             'ASPECT_RATIO_MIN', params.ASPECT_RATIO_MIN, 'ASPECT_RATIO_MAX', params.ASPECT_RATIO_MAX, ...
-                             'L', params.L, 'KERNEL', params.KERNEL, 'BITWISE_OR', params.BITWISE_OR, ...
-                             'PIPELINE_LENGTH', params.PIPELINE_LENGTH, 'PIPELINE_SIZE', params.PIPELINE_SIZE, ...
-                             'H', params.H, 'MAX_NITER_PARAM', params.MAX_NITER_PARAM, ...
-                             'GAMMA1_PARAM', params.GAMMA1_PARAM, 'GAMMA2_PARAM', params.GAMMA2_PARAM, ...
-                             'FRAME_RATE', 10, 'IMAGE_SEQUENCE', 'input/viso_video_1');
+                                  'AREA_MIN', params.AREA_MIN, 'AREA_MAX', params.AREA_MAX, ...
+                                  'ASPECT_RATIO_MIN', params.ASPECT_RATIO_MIN, 'ASPECT_RATIO_MAX', params.ASPECT_RATIO_MAX, ...
+                                  'L', params.L, 'KERNEL', 3, 'BITWISE_OR', 0, ...
+                                  'PIPELINE_LENGTH', params.PIPELINE_LENGTH, 'PIPELINE_SIZE', params.PIPELINE_SIZE, ...
+                                  'H', params.H, 'MAX_NITER_PARAM', params.MAX_NITER_PARAM, ...
+                                  'GAMMA1_PARAM', params.GAMMA1_PARAM, 'GAMMA2_PARAM', params.GAMMA2_PARAM, ...
+                                  'FRAME_RATE', 10, 'IMAGE_SEQUENCE', 'input/viso_video_1');
         
         % Load ground truth data
         groundTruthData = loadGroundTruth('input/viso_video_1_gt.txt');
-
+    
         % Initialize counters
         TP = 0; FP = 0; FN = 0;
         
@@ -50,6 +50,7 @@ function optimize()
             numGt = length(gtObjects);
             numDet = length(detectedObjects);
             costMatrix = largeCost * ones(numGt, numDet);
+            
             for i = 1:numGt
                 for j = 1:numDet
                     bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
@@ -60,17 +61,32 @@ function optimize()
                     end
                 end
             end
+            
             [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
             TP = TP + size(assignments, 1);
             FP = FP + length(unassignedCols);
             FN = FN + length(unassignedRows);
         end
         
-        % Compute precision, recall, and F1 score
-        precision = TP / (TP + FP);
-        recall = TP / (TP + FN);
-        f1Score = 2 * (precision * recall) / (precision + recall);
+        % Compute precision, recall, and F1 score with zero division checks
+        if TP + FP == 0
+            precision = 0;
+        else
+            precision = TP / (TP + FP);
+        end
         
+        if TP + FN == 0
+            recall = 0;
+        else
+            recall = TP / (TP + FN);
+        end
+        
+        if precision + recall == 0
+            f1Score = 0;
+        else
+            f1Score = 2 * (precision * recall) / (precision + recall);
+        end
+            
         % Save precision and recall to a text file
         fileID = fopen('output/precision_recall_data.txt', 'a');
         fprintf(fileID, '%f %f\n', precision, recall);
@@ -90,14 +106,12 @@ function optimize()
     
     % Define the optimization variables
     vars = [
-        optimizableVariable('K', [0, 8], 'Type', 'real');
-        optimizableVariable('AREA_MIN', [0, 80], 'Type', 'integer');
+        optimizableVariable('K', [0, 5], 'Type', 'real');
+        optimizableVariable('AREA_MIN', [0, 100], 'Type', 'integer');
         optimizableVariable('AREA_MAX', [0, 100], 'Type', 'integer');
         optimizableVariable('ASPECT_RATIO_MIN', [0, 10], 'Type', 'real');
         optimizableVariable('ASPECT_RATIO_MAX', [0, 10], 'Type', 'real');
         optimizableVariable('L', [1, 10], 'Type', 'integer');
-        optimizableVariable('KERNEL', [1, 11], 'Type', 'integer');
-        optimizableVariable('BITWISE_OR', [0, 1], 'Type', 'integer'); % 0: false, 1: true
         optimizableVariable('PIPELINE_LENGTH', [1, 10], 'Type', 'integer');
         optimizableVariable('PIPELINE_SIZE', [3, 11], 'Type', 'integer');
         optimizableVariable('H', [1, 10], 'Type', 'integer');
@@ -121,7 +135,7 @@ function optimize()
 
     results = bayesopt(objFunc, vars, ...
                    'AcquisitionFunctionName', 'expected-improvement-plus', ...
-                   'Verbose', 1, ...  % Set verbosity to display minimal information
+                   'Verbose', 2, ...  % Set verbosity to display minimal information
                    'MaxObjectiveEvaluations', 1e6, ...
                    'PlotFcn', [], ...  % Disable all plotting
                    'UseParallel', false); 
