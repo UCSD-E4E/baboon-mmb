@@ -1,5 +1,4 @@
 # Baboon MMB
-
 ## Overview
 This repository contains the MATLAB implementation of the Motion Modeling Baseline" (MMB) described in the paper "Detecting and Tracking Small and Dense Moving Objects in Satellite Videos: A Benchmark" by Qian Yin et al.
 
@@ -15,7 +14,8 @@ Please note that this is not the original implementation by the authors, as thei
   * Parallel Computing Toolbox
 
 ### Running the Code
-#### Baboon MMB
+![Image](banner.png)
+#### Baboom MMB
 To run the project with the default paramters, use the following command in the MATLAB console.
 ```matlab
 baboom_mmb('IMAGE_SEQUENCE', 'path/to/image/sequence/', 'FRAME_RATE', framerate)
