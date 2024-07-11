@@ -1,7 +1,7 @@
 # Baboon MMB
 
 ## Overview
-This repository contains the MATLAB implementation of the Motion Modeling Baseline" (MMB) described in the paper "etecting and Tracking Small and Dense Moving Objects in Satellite Videos: A Benchmark" by Qian Yin et al.
+This repository contains the MATLAB implementation of the Motion Modeling Baseline" (MMB) described in the paper "Detecting and Tracking Small and Dense Moving Objects in Satellite Videos: A Benchmark" by Qian Yin et al.
 
 Please note that this is not the original implementation by the authors, as their code was not publicly available.
 
