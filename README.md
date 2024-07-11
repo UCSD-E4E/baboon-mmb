@@ -15,10 +15,10 @@ Please note that this is not the original implementation by the authors, as thei
 
 ### Running the Code
 ![Image](banner.png)
-#### Baboom MMB
+#### Baboon MMB
 To run the project with the default paramters, use the following command in the MATLAB console.
 ```matlab
-baboom_mmb('IMAGE_SEQUENCE', 'path/to/image/sequence/', 'FRAME_RATE', framerate)
+baboon_mmb('IMAGE_SEQUENCE', 'path/to/image/sequence/', 'FRAME_RATE', framerate)
 ```
 
 This will create an `output/` directory which contains
@@ -52,7 +52,7 @@ You can configure the behavior of the algorithms by setting different command-li
 | DEBUG            | true    | {true, false}          | A boolean parameter that, if true, enables saving intermediate results and additional debugging outputs.                                                                        |
 
 #### Optimize
-If you would prefer to iteratively run `baboom_mmb()` to determine the best hyperparameters, `optimize.m` can be configured and compiled. Note this operation is long and is intended to be ran on a cloud computer.
+If you would prefer to iteratively run `baboon_mmb()` to determine the best hyperparameters, `optimize.m` can be configured and compiled. Note this operation is long and is intended to be ran on a cloud computer.
 
 ## Citations
 If you use this code in your research, please cite the following papers.
