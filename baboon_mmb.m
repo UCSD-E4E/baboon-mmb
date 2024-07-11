@@ -11,11 +11,11 @@ function objects = baboon_mmb(varargin)
     addParameter(p, 'KERNEL', 3, @(x) x >= 1  && x <= 11);
     addParameter(p, 'BITWISE_OR', false, @(x) islogical(x) || isnumeric(x));
     addParameter(p, 'PIPELINE_LENGTH', 5, @(x) x >= 1 && x <= 10);
-    addParameter(p, 'PIPELINE_SIZE', 7, @(x) x >= 3 && x <= 11);
+    addParameter(p, 'PIPELINE_SIZE', 7, @(x) x >= 1 && x <= 11);
     addParameter(p, 'H', 3, @(x) x >= 1 && x <= 10);
     addParameter(p, 'MAX_NITER_PARAM', 10, @(x) x >= 1 && x <= 20);
-    addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 1);
-    addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 1);
+    addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 10);
+    addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 10);
     addParameter(p, 'FRAME_RATE', 10, @(x) x >= 1);
     addParameter(p, 'IMAGE_SEQUENCE', '', @ischar);
 
@@ -24,6 +24,9 @@ function objects = baboon_mmb(varargin)
    
     % Define an empty objects structure
     emptyObjects = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
+
+    args.GAMMA1_PARAM = args.GAMMA1_PARAM / 10;
+    args.GAMMA2_PARAM = args.GAMMA2_PARAM / 10;
 
     % Validate parameters
     if args.AREA_MIN > args.AREA_MAX
@@ -51,7 +54,7 @@ function objects = baboon_mmb(varargin)
 
     amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.ASPECT_RATIO_MIN, args.ASPECT_RATIO_MAX, args.KERNEL, grayFrames);
     % saveMasks(amfdMasks, 'output/amfd');
-    % save('output/amfdMasks.mat', 'amfdMasks');
+    save('output/amfdMasks.mat', 'amfdMasks');
 
     if ~any(cellfun(@(x) any(x(:)), amfdMasks)) && ~args.BITWISE_OR
         objects = emptyObjects;
@@ -60,7 +63,7 @@ function objects = baboon_mmb(varargin)
 
     lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
     % saveMasks(lrmcMasks, 'output/lrmc');
-    % save('output/lrmcMasks.mat', 'lrmcMasks');
+    save('output/lrmcMasks.mat', 'lrmcMasks');
     
     if ~any(cellfun(@(x) any(x(:)), lrmcMasks)) && ~args.BITWISE_OR
         objects = emptyObjects;
@@ -71,7 +74,7 @@ function objects = baboon_mmb(varargin)
     % load('output/lrmcMasks.mat', 'lrmcMasks');
     combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
     % saveMasks(combinedMasks, 'output/combinedMasks');
-    % save('output/combinedMasks.mat', 'combinedMasks');
+    save('output/combinedMasks.mat', 'combinedMasks');
 
     if ~any(cellfun(@(x) any(x(:)), combinedMasks))
         objects = emptyObjects;
@@ -80,7 +83,7 @@ function objects = baboon_mmb(varargin)
     
     % load('output/combinedMasks.mat', 'combinedMasks');
     objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
-    % save('output/objects.mat', 'objects');
+    save('output/objects.mat', 'objects');
     % load('output/objects.mat', 'objects');
 
     % saveObjectsToTxt(objects, 'output/objects.txt');

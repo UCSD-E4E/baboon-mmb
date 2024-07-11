@@ -1,4 +1,5 @@
 function optimize()
+    % Load ground truth data function
     function groundTruthData = loadGroundTruth(filename)
         groundTruthFile = load(filename);
         numEntries = size(groundTruthFile, 1);
@@ -15,35 +16,28 @@ function optimize()
             groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
         end
     end
-    
-    % Nested function: evaluation
-    function f1Score = evaluateParams(params)
-        % Call the baboon_mmb function with given parameters
-        detectedData = baboon_mmb('K', params.K, 'CONNECTIVITY', 8, ...
-                                  'AREA_MIN', params.AREA_MIN, 'AREA_MAX', params.AREA_MAX, ...
-                                  'ASPECT_RATIO_MIN', params.ASPECT_RATIO_MIN, 'ASPECT_RATIO_MAX', params.ASPECT_RATIO_MAX, ...
-                                  'L', params.L, 'KERNEL', 3, 'BITWISE_OR', 0, ...
-                                  'PIPELINE_LENGTH', params.PIPELINE_LENGTH, 'PIPELINE_SIZE', params.PIPELINE_SIZE, ...
-                                  'H', params.H, 'MAX_NITER_PARAM', params.MAX_NITER_PARAM, ...
-                                  'GAMMA1_PARAM', params.GAMMA1_PARAM, 'GAMMA2_PARAM', params.GAMMA2_PARAM, ...
+
+    % Evaluate parameters function
+    function [negPrecision, negRecall] = evaluateParams(params)
+        detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
+                                  'AREA_MIN', params(2), 'AREA_MAX', params(3), ...
+                                  'ASPECT_RATIO_MIN', params(4), 'ASPECT_RATIO_MAX', params(5), ...
+                                  'L', params(6), 'KERNEL', 3, 'BITWISE_OR', 0, ...
+                                  'PIPELINE_LENGTH', params(7), 'PIPELINE_SIZE', params(8), ...
+                                  'H', params(9), 'MAX_NITER_PARAM', params(10), ...
+                                  'GAMMA1_PARAM', params(11), 'GAMMA2_PARAM', params(12), ...
                                   'FRAME_RATE', 10, 'IMAGE_SEQUENCE', 'input/viso_video_1');
         
-        % Load ground truth data
         groundTruthData = loadGroundTruth('input/viso_video_1_gt.txt');
-    
-        % Initialize counters
         TP = 0; FP = 0; FN = 0;
         
-        % Handle case where detectedData is empty
         if isempty(detectedData)
             detectedData = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
         end
         
-        % Unique frames
         uniqueFrames = unique([groundTruthData.frameNumber, [detectedData.frameNumber]]);
         largeCost = 1e6;
         
-        % Compare ground truth and detected data
         for frame = uniqueFrames
             gtObjects = groundTruthData([groundTruthData.frameNumber] == frame);
             detectedObjects = detectedData([detectedData.frameNumber] == frame);
@@ -68,78 +62,56 @@ function optimize()
             FN = FN + length(unassignedRows);
         end
         
-        % Compute precision, recall, and F1 score with zero division checks
-        if TP + FP == 0
-            precision = 0;
-        else
-            precision = TP / (TP + FP);
-        end
+        precision = TP / (TP + FP + eps);
+        recall = TP / (TP + FN + eps);
         
-        if TP + FN == 0
-            recall = 0;
-        else
-            recall = TP / (TP + FN);
-        end
-        
-        if precision + recall == 0
-            f1Score = 0;
-        else
-            f1Score = 2 * (precision * recall) / (precision + recall);
-        end
-            
-        % Save precision and recall to a text file
-        fileID = fopen('output/precision_recall_data.txt', 'a');
-        fprintf(fileID, '%f %f\n', precision, recall);
-        fclose(fileID);
-        
-        % Return negative F1 score for minimization
-        f1Score = -f1Score;
+        negPrecision = -precision;  % We minimize negative precision to maximize precision
+        negRecall = -recall;        % We minimize negative recall to maximize recall
     end
-    
-    % Define the feasibility check function
-    function feasible = isFeasible(params)
-        feasible = params.AREA_MIN <= params.AREA_MAX && ...
-                   params.ASPECT_RATIO_MIN <= params.ASPECT_RATIO_MAX && ...
-                   params.H <= params.PIPELINE_LENGTH && ...
-                   params.GAMMA1_PARAM <= params.GAMMA2_PARAM;
-    end
-    
-    % Define the optimization variables
-    vars = [
-        optimizableVariable('K', [0, 5], 'Type', 'real');
-        optimizableVariable('AREA_MIN', [0, 100], 'Type', 'integer');
-        optimizableVariable('AREA_MAX', [0, 100], 'Type', 'integer');
-        optimizableVariable('ASPECT_RATIO_MIN', [0, 10], 'Type', 'real');
-        optimizableVariable('ASPECT_RATIO_MAX', [0, 10], 'Type', 'real');
-        optimizableVariable('L', [1, 10], 'Type', 'integer');
-        optimizableVariable('PIPELINE_LENGTH', [1, 10], 'Type', 'integer');
-        optimizableVariable('PIPELINE_SIZE', [3, 11], 'Type', 'integer');
-        optimizableVariable('H', [1, 10], 'Type', 'integer');
-        optimizableVariable('MAX_NITER_PARAM', [1, 20], 'Type', 'integer');
-        optimizableVariable('GAMMA1_PARAM', [0, 1], 'Type', 'real');
-        optimizableVariable('GAMMA2_PARAM', [0, 1], 'Type', 'real');
-    ];
-    
-    % Define the objective function for Bayesian optimization
-    objFunc = @(params)feasibleObjFunc(params);
-    
-    % Wrapper for objective function with feasibility check
-    function f = feasibleObjFunc(params)
-        if isFeasible(params)
-            f = evaluateParams(params);
-        else
-            f = inf; % Penalize infeasible points
-        end
-    end
-    
 
-    results = bayesopt(objFunc, vars, ...
-                   'AcquisitionFunctionName', 'expected-improvement-plus', ...
-                   'Verbose', 2, ...  % Set verbosity to display minimal information
-                   'MaxObjectiveEvaluations', 1e6, ...
-                   'PlotFcn', [], ...  % Disable all plotting
-                   'UseParallel', false); 
+    % Load previous state if available
+    stateFile = 'output/gamultiobj_state.mat';
+    if isfile(stateFile)
+        load(stateFile, 'state');
+        options = state.options;
+    else
+        options = optimoptions('gamultiobj', ...
+            'PopulationSize', 1000, ...  % Increase population size
+            'MaxGenerations', 5000, ...  % Allow more generations
+            'FunctionTolerance', 1e-6, ...  % Set a low function tolerance
+            'MaxStallGenerations', 500, ...  % Increase max stall generations
+            'UseParallel', false, ...  % Disable parallel computation
+            'ParetoFraction', 0.7, ...  % Keep a larger fraction on the Pareto front
+            'Display', 'iter', ...  % Display output at each iteration
+            'OutputFcn', @saveCheckpoint ...  % Custom function to save output periodically
+        );
+    end
 
-    % Save the results
-    save('output/optimization_results.mat', 'results');
+    % Define the objective function and variable bounds
+    FitnessFunction = @evaluateParams;
+    numberOfVariables = 12;
+    lb = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0];
+    ub = [5, 100, 100, 10, 10, 10, 10, 11, 10, 20, 10, 10];
+
+    % Run the optimization
+    [x, Fval, exitFlag, Output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, options);
+
+    % Save the final results
+    save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
+
+    % Plot the Pareto front
+    figure;
+    plot(Fval(:,1), Fval(:,2), 'bo');
+    xlabel('Precision');
+    ylabel('Recall');
+    title('Pareto Front Video 1');
+
+    % Function to save output periodically and for checkpointing
+    function [state, options, optchanged] = saveCheckpoint(options, state, flag)
+        optchanged = false;
+        if strcmp(flag, 'iter')
+            save('output/gamultiobj_state.mat', 'state');
+            fprintf('Checkpoint saved at generation %d.\n', state.Generation);
+        end
+    end
 end
