@@ -1,4 +1,13 @@
-function optimize()
+function optimize(varargin)
+% Parse command line arguments
+p = inputParser;
+addParameter(p, 'InputPath', 'input/viso_video_1', @ischar);
+addParameter(p, 'FrameRate', 10, @isnumeric);
+parse(p, varargin{:});
+
+inputPath = p.Results.InputPath;
+frameRate = p.Results.FrameRate;
+
 % Load ground truth data function
     function groundTruthData = loadGroundTruth(filename)
         groundTruthFile = load(filename);
@@ -26,7 +35,7 @@ function optimize()
             'PIPELINE_LENGTH', params(7), 'PIPELINE_SIZE', params(8), ...
             'H', params(9), 'MAX_NITER_PARAM', params(10), ...
             'GAMMA1_PARAM', params(11), 'GAMMA2_PARAM', params(12), ...
-            'FRAME_RATE', 10, 'IMAGE_SEQUENCE', 'input/viso_video_1', 'DEBUG', false);
+            'FRAME_RATE', frameRate, 'IMAGE_SEQUENCE', inputPath, 'DEBUG', false);
         
         groundTruthData = loadGroundTruth('input/viso_video_1_gt.txt');
         TP = 0; FP = 0; FN = 0;
@@ -80,7 +89,7 @@ else
         'MaxGenerations', 5000, ...  % Allow more generations
         'FunctionTolerance', 1e-6, ...  % Set a low function tolerance
         'MaxStallGenerations', 500, ...  % Increase max stall generations
-        'UseParallel', false, ...  % Disable parallel computation
+        'UseParallel', true, ...  % Enable parallel computation
         'ParetoFraction', 0.7, ...  % Keep a larger fraction on the Pareto front
         'Display', 'iter', ...  % Display output at each iteration
         'OutputFcn', @saveCheckpoint ...  % Custom function to save output periodically
