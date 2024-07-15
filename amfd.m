@@ -32,7 +32,7 @@ for t = 2:(numFrames - 1)
     binaryImage = imclose(imopen(Id >= T, se), se);
     
     % Connected components and properties
-    labeledImage = bwlabel(binaryImage, CONNECTIVITY);
+    labeledImage = bwlabel(binaryImage, double(CONNECTIVITY));
     props = regionprops(labeledImage, 'Area', 'BoundingBox');
     
     for propIdx = 1:length(props)
