@@ -1,33 +1,55 @@
 function objects = baboon_mmb(varargin)
 p = inputParser;
 
-addParameter(p, 'K', 4, @(x) x >= 0 && x <= 8);
-addParameter(p, 'CONNECTIVITY', 8, @(x) any(x == [4, 8]));
-addParameter(p, 'AREA_MIN', 5, @(x) x >= 0 && x <= 100);
-addParameter(p, 'AREA_MAX', 80, @(x) x >= 0 && x <= 100);
-addParameter(p, 'ASPECT_RATIO_MIN', 1, @(x) x >= 0 && x <= 10);
-addParameter(p, 'ASPECT_RATIO_MAX', 6, @(x) x >= 0 && x <= 10);
-addParameter(p, 'L', 4, @(x) x >= 1 && x <= 10);
-addParameter(p, 'KERNEL', 3, @(x) x >= 1  && x <= 11);
-addParameter(p, 'BITWISE_OR', false, @(x) islogical(x) || isnumeric(x));
-addParameter(p, 'PIPELINE_LENGTH', 5, @(x) x >= 1 && x <= 10);
-addParameter(p, 'PIPELINE_SIZE', 7, @(x) x >= 1 && x <= 11);
-addParameter(p, 'H', 3, @(x) x >= 1 && x <= 10);
-addParameter(p, 'MAX_NITER_PARAM', 10, @(x) x >= 1 && x <= 20);
-addParameter(p, 'GAMMA1_PARAM', 8, @(x) x >= 0 && x <= 10);
-addParameter(p, 'GAMMA2_PARAM', 8, @(x) x >= 0 && x <= 10);
-addParameter(p, 'FRAME_RATE', 10, @(x) x >= 1);
-addParameter(p, 'IMAGE_SEQUENCE', '', @ischar);
-addParameter(p, "DEBUG", true, @islogical)
+% Define parameters with validation functions
+addParameter(p, 'K', 4, @(x) isnumeric(x) && x >= 0 && x <= 8);
+addParameter(p, 'CONNECTIVITY', 8, @(x) isnumeric(x) && any(x == [4, 8]));
+addParameter(p, 'AREA_MIN', 5, @(x) isnumeric(x) && x >= 0 && x <= 100);
+addParameter(p, 'AREA_MAX', 80, @(x) isnumeric(x) && x >= 0 && x <= 100);
+addParameter(p, 'ASPECT_RATIO_MIN', 1, @(x) isnumeric(x) && x >= 0 && x <= 10);
+addParameter(p, 'ASPECT_RATIO_MAX', 6, @(x) isnumeric(x) && x >= 0 && x <= 10);
+addParameter(p, 'L', 4, @(x) isnumeric(x) && x >= 1 && x <= 10);
+addParameter(p, 'KERNEL', 3, @(x) isnumeric(x) && x >= 1 && x <= 11);
+addParameter(p, 'BITWISE_OR', false, @(x) islogical(x));
+addParameter(p, 'PIPELINE_LENGTH', 5, @(x) isnumeric(x) && x >= 1 && x <= 10);
+addParameter(p, 'PIPELINE_SIZE', 7, @(x) isnumeric(x) && x >= 1 && x <= 11);
+addParameter(p, 'H', 3, @(x) isnumeric(x) && x >= 1 && x <= 10);
+addParameter(p, 'MAX_NITER_PARAM', 10, @(x) isnumeric(x) && x >= 1 && x <= 20);
+addParameter(p, 'GAMMA1_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 10);
+addParameter(p, 'GAMMA2_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 10);
+addParameter(p, 'FRAME_RATE', 10, @(x) isnumeric(x) && x >= 1);
+addParameter(p, 'IMAGE_SEQUENCE', '', @(x) ischar(x) || isstring(x));
+addParameter(p, 'DEBUG', true, @(x) islogical(x));
 
 parse(p, varargin{:});
 args = p.Results;
 
+% Check if /output folder exists
+if ~exist('output', 'dir')
+    mkdir('output');
+end
+
 % Define an empty objects structure
 emptyObjects = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}, 'height', {});
 
-args.GAMMA1_PARAM = args.GAMMA1_PARAM / 10;
-args.GAMMA2_PARAM = args.GAMMA2_PARAM / 10;
+
+% Adjust parameters
+args.K = double(args.K);
+args.CONNECTIVITY = uint8(args.CONNECTIVITY);
+args.AREA_MIN = double(args.AREA_MIN);
+args.AREA_MAX = double(args.AREA_MAX);
+args.ASPECT_RATIO_MIN = double(args.ASPECT_RATIO_MIN);
+args.ASPECT_RATIO_MAX = double(args.ASPECT_RATIO_MAX);
+args.L = uint8(args.L);
+args.KERNEL = uint8(args.KERNEL);
+args.BITWISE_OR = logical(args.BITWISE_OR);
+args.PIPELINE_LENGTH = uint8(args.PIPELINE_LENGTH);
+args.PIPELINE_SIZE = uint8(args.PIPELINE_SIZE);
+args.H = uint8(args.H);
+args.MAX_NITER_PARAM = uint8(args.MAX_NITER_PARAM);
+args.GAMMA1_PARAM = double(args.GAMMA1_PARAM) / 10; 
+args.GAMMA2_PARAM = double(args.GAMMA2_PARAM) / 10; 
+args.FRAME_RATE = uint8(args.FRAME_RATE);
 
 % Validate parameters
 if args.AREA_MIN > args.AREA_MAX
