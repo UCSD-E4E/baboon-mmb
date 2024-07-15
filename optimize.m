@@ -1,12 +1,25 @@
 function optimize(varargin)
 % Parse command line arguments
 p = inputParser;
-addParameter(p, 'InputPath', 'input/viso_video_1', @ischar);
-addParameter(p, 'FrameRate', 10, @isnumeric);
+validPath = @(x) ischar(x) && isfolder(x);
+validFile = @(x) ischar(x) && isfile(x);
+validScalarNum = @(x) isnumeric(x) && isscalar(x);
+validLogical = @(x) islogical(x);
+
+addParameter(p, 'InputPath', 'input/viso_video_1', validPath);
+addParameter(p, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
+addParameter(p, 'FrameRate', 10, validScalarNum);
+addParameter(p, 'PopulationSize', 1000, validScalarNum);
+addParameter(p, 'MaxGenerations', 5000, validScalarNum);
+addParameter(p, 'FunctionTolerance', 1e-6, validScalarNum);
+addParameter(p, 'MaxStallGenerations', 500, validScalarNum);
+addParameter(p, 'UseParallel', true, validLogical);
+addParameter(p, 'ParetoFraction', 0.7, validScalarNum);
+addParameter(p, 'Display', 'iter', @ischar);
+addParameter(p, 'Continue', false, validLogical);
 parse(p, varargin{:});
 
-inputPath = p.Results.InputPath;
-frameRate = p.Results.FrameRate;
+results = p.Results;
 
 % Load ground truth data function
     function groundTruthData = loadGroundTruth(filename)
@@ -35,9 +48,9 @@ frameRate = p.Results.FrameRate;
             'PIPELINE_LENGTH', params(7), 'PIPELINE_SIZE', params(8), ...
             'H', params(9), 'MAX_NITER_PARAM', params(10), ...
             'GAMMA1_PARAM', params(11), 'GAMMA2_PARAM', params(12), ...
-            'FRAME_RATE', frameRate, 'IMAGE_SEQUENCE', inputPath, 'DEBUG', false);
+            'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
         
-        groundTruthData = loadGroundTruth('input/viso_video_1_gt.txt');
+        groundTruthData = loadGroundTruth(results.GroundTruthPath);
         TP = 0; FP = 0; FN = 0;
         
         if isempty(detectedData)
@@ -78,22 +91,24 @@ frameRate = p.Results.FrameRate;
         negRecall = -recall;        % We minimize negative recall to maximize recall
     end
 
-% Load previous state if available
+% Load checkpoint if available
 stateFile = 'output/gamultiobj_state.mat';
-if isfile(stateFile)
-    load(stateFile, 'state');
-    options = state.options;
+if results.Continue && isfile(stateFile)
+    load(stateFile, 'state', 'options');
+    fprintf('Continuing from saved state...\n');
+    % Adjust MaxGenerations based on remaining generations
+    options.MaxGenerations = results.MaxGenerations - state.Generation;
 else
+    % Use command line arguments
     options = optimoptions('gamultiobj', ...
-        'PopulationSize', 1000, ...  % Increase population size
-        'MaxGenerations', 5000, ...  % Allow more generations
-        'FunctionTolerance', 1e-6, ...  % Set a low function tolerance
-        'MaxStallGenerations', 500, ...  % Increase max stall generations
-        'UseParallel', true, ...  % Enable parallel computation
-        'ParetoFraction', 0.7, ...  % Keep a larger fraction on the Pareto front
-        'Display', 'iter', ...  % Display output at each iteration
-        'OutputFcn', @saveCheckpoint ...  % Custom function to save output periodically
-        );
+        'PopulationSize', results.PopulationSize, ...
+        'MaxGenerations', results.MaxGenerations, ...
+        'FunctionTolerance', results.FunctionTolerance, ...
+        'MaxStallGenerations', results.MaxStallGenerations, ...
+        'UseParallel', results.UseParallel, ...
+        'ParetoFraction', results.ParetoFraction, ...
+        'Display', results.Display, ...
+        'OutputFcn', @saveCheckpoint);
 end
 
 % Define the objective function and variable bounds
@@ -101,26 +116,33 @@ FitnessFunction = @evaluateParams;
 numberOfVariables = 12;
 lb = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0];
 ub = [5, 100, 100, 10, 10, 10, 10, 11, 10, 20, 10, 10];
+intIndices = [1, 6, 7, 8, 9, 10, 11, 12];
 
 % Run the optimization
-[x, Fval, exitFlag, Output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, options);
+[x, Fval, exitFlag, Output, state] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, [], intIndices, options);
 
 % Save the final results
 save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
 
-% Plot the Pareto front
+% Save the Pareto front plot to a file
 figure;
 plot(Fval(:,1), Fval(:,2), 'bo');
 xlabel('Precision');
 ylabel('Recall');
 title('Pareto Front Video 1');
+saveas(gcf, 'output/pareto_front.png');
 
 % Function to save output periodically and for checkpointing
     function [state, options, optchanged] = saveCheckpoint(options, state, flag)
         optchanged = false;
-        if strcmp(flag, 'iter')
-            save('output/gamultiobj_state.mat', 'state');
+        if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
+            save('output/gamultiobj_state.mat', 'state', 'options');
             fprintf('Checkpoint saved at generation %d.\n', state.Generation);
+            fprintf('Current Best Score: %.4f\n', min(state.Score(:,1)));
+            fprintf('Current Worst Score: %.4f\n', max(state.Score(:,1)));
+            fprintf('Number of Individuals: %d\n', size(state.Population, 1));
+            [bestScore, bestIdx] = min(state.Score(:,1));
+            fprintf('Best Parameters: %s\n', mat2str(state.Population(bestIdx, :)));
         end
     end
 end
