@@ -157,13 +157,16 @@ results = p.Results;
         
         precision = TP / (TP + FP + eps);
         recall = TP / (TP + FN + eps);
-        
+        f1Score = (2 * precision * recall) / (precision + recall);
+
         % Save parameters, precision, and recall to a text file
-        resultsFile = 'output/evaluation_results.txt';
-        paramStr = sprintf('%.4f ', params);
-        fileID = fopen(resultsFile, 'a');
-        fprintf(fileID, '%s Precision: %.4f Recall: %.4f\n', paramStr, precision, recall);
-        fclose(fileID);
+        if f1Score > 0 
+            resultsFile = 'output/evaluation_results.txt';
+            paramStr = sprintf('%.4f ', params);
+            fileID = fopen(resultsFile, 'a');
+            fprintf(fileID, '%s Precision: %.4f Recall: %.4f\n F1: %.4f', paramStr, precision, recall, f1Score);
+            fclose(fileID);
+        end 
     end
 
 % Load checkpoint if available
