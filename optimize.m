@@ -157,6 +157,13 @@ results = p.Results;
         
         precision = TP / (TP + FP + eps);
         recall = TP / (TP + FN + eps);
+        
+        % Save parameters, precision, and recall to a text file
+        resultsFile = 'output/evaluation_results.txt';
+        paramStr = sprintf('%.4f ', params);
+        fileID = fopen(resultsFile, 'a');
+        fprintf(fileID, '%s Precision: %.4f Recall: %.4f\n', paramStr, precision, recall);
+        fclose(fileID);
     end
 
 % Load checkpoint if available
@@ -205,12 +212,6 @@ saveas(gcf, 'output/pareto_front.png');
         optchanged = false;
         if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
             save('output/gamultiobj_state.mat', 'state', 'options');
-            fprintf('Checkpoint saved at generation %d.\n', state.Generation);
-            fprintf('Current Best Score: %.4f\n', min(state.Score(:,1)));
-            fprintf('Current Worst Score: %.4f\n', max(state.Score(:,1)));
-            fprintf('Number of Individuals: %d\n', size(state.Population, 1));
-            [bestScore, bestIdx] = min(state.Score(:,1));
-            fprintf('Best Parameters: %s\n', mat2str(state.Population(bestIdx, :)));
         end
     end
 end
