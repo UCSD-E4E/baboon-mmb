@@ -17,6 +17,7 @@ addParameter(p, 'UseParallel', true, validLogical);
 addParameter(p, 'ParetoFraction', 0.7, validScalarNum);
 addParameter(p, 'Display', 'iter', @ischar);
 addParameter(p, 'Continue', false, validLogical);
+addParameter(p, 'OptimizationType', 1, @(x) isnumeric(x) && isscalar(x) && any(x == [1, 2, 3, 4]));
 parse(p, varargin{:});
 
 results = p.Results;
@@ -40,7 +41,7 @@ results = p.Results;
     end
 
 % Evaluate parameters function
-    function [negPrecision, negRecall] = evaluateParams(params)
+    function [precision, recall] = evaluateParams(params)
         detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
             'AREA_MIN', params(2), 'AREA_MAX', params(3), ...
             'ASPECT_RATIO_MIN', params(4), 'ASPECT_RATIO_MAX', params(5), ...
@@ -65,30 +66,97 @@ results = p.Results;
             detectedObjects = detectedData([detectedData.frameNumber] == frame);
             numGt = length(gtObjects);
             numDet = length(detectedObjects);
-            costMatrix = largeCost * ones(numGt, numDet);
             
-            for i = 1:numGt
-                for j = 1:numDet
-                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        costMatrix(i, j) = 1 - overlapRatio;
+            switch results.OptimizationType
+                case 1
+                    for i = 1:numGt
+                        gtOverlap = false;
+                        for j = 1:numDet
+                            bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                            bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                            overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                            if overlapRatio > 0
+                                gtOverlap = true;
+                                break;
+                            end
+                        end
+                        if gtOverlap
+                            TP = TP + 1;
+                        else
+                            FN = FN + 1;
+                        end
                     end
-                end
+                    FP = numDet - TP;
+                case 2
+                    costMatrix = largeCost * ones(numGt, numDet);
+                    
+                    for i = 1:numGt
+                        for j = 1:numDet
+                            bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                            bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                            overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                            if overlapRatio > 0
+                                costMatrix(i, j) = 1 - overlapRatio;
+                            end
+                        end
+                    end
+                    
+                    [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
+                    TP = TP + size(assignments, 1);
+                    FP = FP + length(unassignedCols);
+                    FN = FN + length(unassignedRows);
+                case 3
+                    matchedGt = false(1, numGt);
+                    for j = 1:numDet
+                        bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                        maxOverlap = 0;
+                        bestMatchedIdx = 0;
+                        for i = 1:numGt
+                            if ~matchedGt(i)
+                                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                                overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                                if overlapRatio > maxOverlap
+                                    maxOverlap = overlapRatio;
+                                    bestMatchedIdx = i;
+                                end
+                                
+                            end
+                        end
+                        if maxOverlap > 0
+                            TP = TP + 1
+                            matchedGt(bestMatchedIdx) = true;
+                        else
+                            FP = FP + 1;
+                        end
+                    end
+                    
+                    FN = FN + sum(~matchedGt);
+                case 4
+                    matchedGt = false(1, numGt);
+                    for j = 1:numDet
+                        bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                        perfectMatch = false;
+                        for i = 1:numGt
+                            if ~matchedGt(i)
+                                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                                if isequal(bbGt, bbDet)
+                                    TP = TP + 1
+                                    matchedGt(i) = true;
+                                    perfectMatch = true;
+                                    break;
+                                end
+                            end
+                        end
+                        if ~perfectMatch
+                            FP = FP + 1;
+                        end
+                    end
+                    FN = FN + sum(~matchedGt);
             end
-            
-            [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
-            TP = TP + size(assignments, 1);
-            FP = FP + length(unassignedCols);
-            FN = FN + length(unassignedRows);
         end
         
         precision = TP / (TP + FP + eps);
         recall = TP / (TP + FN + eps);
-        
-        negPrecision = -precision;  % We minimize negative precision to maximize precision
-        negRecall = -recall;        % We minimize negative recall to maximize recall
     end
 
 % Load checkpoint if available
