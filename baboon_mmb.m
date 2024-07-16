@@ -15,8 +15,8 @@ addParameter(p, 'PIPELINE_LENGTH', 5, @(x) isnumeric(x) && x >= 1 && x <= 10);
 addParameter(p, 'PIPELINE_SIZE', 7, @(x) isnumeric(x) && x >= 1 && x <= 11);
 addParameter(p, 'H', 3, @(x) isnumeric(x) && x >= 1 && x <= 10);
 addParameter(p, 'MAX_NITER_PARAM', 10, @(x) isnumeric(x) && x >= 1 && x <= 20);
-addParameter(p, 'GAMMA1_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 10);
-addParameter(p, 'GAMMA2_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 10);
+addParameter(p, 'GAMMA1_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
+addParameter(p, 'GAMMA2_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
 addParameter(p, 'FRAME_RATE', 10, @(x) isnumeric(x) && x >= 1);
 addParameter(p, 'IMAGE_SEQUENCE', '', @(x) ischar(x) || isstring(x));
 addParameter(p, 'DEBUG', true, @(x) islogical(x));
@@ -38,8 +38,8 @@ args.PIPELINE_LENGTH = uint8(args.PIPELINE_LENGTH);
 args.PIPELINE_SIZE = uint8(args.PIPELINE_SIZE);
 args.H = uint8(args.H);
 args.MAX_NITER_PARAM = uint8(args.MAX_NITER_PARAM);
-args.GAMMA1_PARAM = double(args.GAMMA1_PARAM) / 10;
-args.GAMMA2_PARAM = double(args.GAMMA2_PARAM) / 10;
+args.GAMMA1_PARAM = double(args.GAMMA1_PARAM);
+args.GAMMA2_PARAM = double(args.GAMMA2_PARAM);
 args.FRAME_RATE = uint8(args.FRAME_RATE);
 
 % Check if /output folder exists

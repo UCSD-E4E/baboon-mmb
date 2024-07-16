@@ -190,8 +190,8 @@ end
 FitnessFunction = @evaluateParams;
 numberOfVariables = 12;
 lb = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0];
-ub = [5, 100, 100, 10, 10, 10, 10, 11, 10, 20, 10, 10];
-intIndices = [1, 6, 7, 8, 9, 10, 11, 12];
+ub = [8, 100, 100, 10, 10, 10, 10, 11, 10, 20, 1, 1];
+intIndices = [6, 7, 8, 9, 10];
 
 % Run the optimization
 [x, Fval, exitFlag, Output, state] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, [], intIndices, options);
