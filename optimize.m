@@ -3,23 +3,37 @@ function optimize(varargin)
 p = inputParser;
 validPath = @(x) ischar(x) && isfolder(x);
 validFile = @(x) ischar(x) && isfile(x);
-validScalarNum = @(x) isnumeric(x) && isscalar(x);
+validStringNum = @(x) ischar(x) && ~isnan(str2double(x));
 
+% All parameters are added as strings
 addParameter(p, 'InputPath', 'input/viso_video_1', validPath);
 addParameter(p, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(p, 'FrameRate', 10, validScalarNum);
-addParameter(p, 'PopulationSize', 1000, validScalarNum);
-addParameter(p, 'MaxGenerations', 5000, validScalarNum);
-addParameter(p, 'FunctionTolerance', 1e-6, validScalarNum);
-addParameter(p, 'MaxStallGenerations', 500, validScalarNum);
-addParameter(p, 'UseParallel', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x) && any(x == [0, 1])));
-addParameter(p, 'ParetoFraction', 0.7, validScalarNum);
+addParameter(p, 'FrameRate', '10', validStringNum);
+addParameter(p, 'PopulationSize', '1000', validStringNum);
+addParameter(p, 'MaxGenerations', '5000', validStringNum);
+addParameter(p, 'FunctionTolerance', '1e-6', validStringNum);
+addParameter(p, 'MaxStallGenerations', '500', validStringNum);
+addParameter(p, 'UseParallel', 'true', @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'})));
+addParameter(p, 'ParetoFraction', '0.7', validStringNum);
 addParameter(p, 'Display', 'iter', @ischar);
-addParameter(p, 'Continue', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x) && any(x == [0, 1])));
-addParameter(p, 'OptimizationType', 2, @(x) isnumeric(x) && isscalar(x) && any(x == [1, 2, 3, 4]));
+addParameter(p, 'Continue', 'false', @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'})));
+addParameter(p, 'OptimizationType', '2', @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]));
+
 parse(p, varargin{:});
 
-results = p.Results;
+% Convert parameters to their appropriate types
+results.InputPath = p.Results.InputPath;
+results.GroundTruthPath = p.Results.GroundTruthPath;
+results.FrameRate = str2double(p.Results.FrameRate);
+results.PopulationSize = str2double(p.Results.PopulationSize);
+results.MaxGenerations = str2double(p.Results.MaxGenerations);
+results.FunctionTolerance = str2double(p.Results.FunctionTolerance);
+results.MaxStallGenerations = str2double(p.Results.MaxStallGenerations);
+results.UseParallel = strcmpi(p.Results.UseParallel, 'true') || str2double(p.Results.UseParallel) == 1;
+results.ParetoFraction = str2double(p.Results.ParetoFraction);
+results.Display = p.Results.Display;
+results.Continue = strcmpi(p.Results.Continue, 'true') || str2double(p.Results.Continue) == 1;
+results.OptimizationType = str2double(p.Results.OptimizationType);
 
 % Load ground truth data function
     function groundTruthData = loadGroundTruth(filename)
