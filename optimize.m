@@ -160,11 +160,20 @@ results = p.Results;
         
         % Save parameters, precision, and recall to a text file
         if f1Score > 0
-            resultsFile = 'output/evaluation_results.txt';
-            paramStr = sprintf('%.4f ', params);
-            fileID = fopen(resultsFile, 'a');
-            fprintf(fileID, '%s Precision: %.4f Recall: %.4f\n F1: %.4f', paramStr, precision, recall, f1Score);
-            fclose(fileID);
+            if results.UseParallel
+                workerID = getCurrnentTask().ID;
+                resultsFile = sprintf('output/evaluation_results_worker_%d.txt', workerID);
+                paramStr = sprintf('%.4f ', params);
+                fileID = fopen(resultsFile, 'a');
+                fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
+                fclose(fileID);
+            else
+                resultsFile = 'output/evaluation_results.txt';
+                paramStr = sprintf('%.4f ', params);
+                fileID = fopen(resultsFile, 'a');
+                fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
+                fclose(fileID);
+            end
         end
     end
 
@@ -200,6 +209,18 @@ intIndices = [6, 7, 8, 9, 10];
 
 % Save the final results
 save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
+
+if results.UseParallel
+    resultFiles = dir('output/evaluation_results_worker_*.txt');
+    mergedResults = 'output/evaluation_results.txt';
+    mergedFileId = fopen(mergedResults, 'a');
+    for k = 1:length(resultFiles)
+        workerFile = fullfile(resultFile(k).folder, resultFiles(k).name);
+        workerData = fileread(workerFile);
+        fprintf(mergedFileId, '%s\n', workerData);
+    end
+    fclose(mergedFileId);
+end
 
 % Save the Pareto front plot to a file
 figure;
