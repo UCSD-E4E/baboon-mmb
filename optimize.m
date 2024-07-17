@@ -4,7 +4,6 @@ p = inputParser;
 validPath = @(x) ischar(x) && isfolder(x);
 validFile = @(x) ischar(x) && isfile(x);
 validScalarNum = @(x) isnumeric(x) && isscalar(x);
-validLogical = @(x) islogical(x);
 
 addParameter(p, 'InputPath', 'input/viso_video_1', validPath);
 addParameter(p, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
@@ -13,11 +12,11 @@ addParameter(p, 'PopulationSize', 1000, validScalarNum);
 addParameter(p, 'MaxGenerations', 5000, validScalarNum);
 addParameter(p, 'FunctionTolerance', 1e-6, validScalarNum);
 addParameter(p, 'MaxStallGenerations', 500, validScalarNum);
-addParameter(p, 'UseParallel', true, validLogical);
+addParameter(p, 'UseParallel', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x) && any(x == [0, 1])));
 addParameter(p, 'ParetoFraction', 0.7, validScalarNum);
 addParameter(p, 'Display', 'iter', @ischar);
-addParameter(p, 'Continue', false, validLogical);
-addParameter(p, 'OptimizationType', 1, @(x) isnumeric(x) && isscalar(x) && any(x == [1, 2, 3, 4]));
+addParameter(p, 'Continue', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x) && any(x == [0, 1])));
+addParameter(p, 'OptimizationType', 2, @(x) isnumeric(x) && isscalar(x) && any(x == [1, 2, 3, 4]));
 parse(p, varargin{:});
 
 results = p.Results;
@@ -158,15 +157,15 @@ results = p.Results;
         precision = TP / (TP + FP + eps);
         recall = TP / (TP + FN + eps);
         f1Score = (2 * precision * recall) / (precision + recall);
-
+        
         % Save parameters, precision, and recall to a text file
-        if f1Score > 0 
+        if f1Score > 0
             resultsFile = 'output/evaluation_results.txt';
             paramStr = sprintf('%.4f ', params);
             fileID = fopen(resultsFile, 'a');
             fprintf(fileID, '%s Precision: %.4f Recall: %.4f\n F1: %.4f', paramStr, precision, recall, f1Score);
             fclose(fileID);
-        end 
+        end
     end
 
 % Load checkpoint if available
