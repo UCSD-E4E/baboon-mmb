@@ -78,9 +78,8 @@ amfdMasks = amfd(args.K, args.CONNECTIVITY, args.AREA_MIN, args.AREA_MAX, args.A
 
 if args.DEBUG
     saveMasks(amfdMasks, 'output/amfd');
+    save('output/amfdMasks.mat', 'amfdMasks');
 end
-
-save('output/amfdMasks.mat', 'amfdMasks');
 
 if ~any(cellfun(@(x) any(x(:)), amfdMasks)) && ~args.BITWISE_OR
     objects = emptyObjects;
@@ -90,8 +89,8 @@ end
 lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
 if args.DEBUG
     saveMasks(lrmcMasks, 'output/lrmc');
+    save('output/lrmcMasks.mat', 'lrmcMasks');
 end
-save('output/lrmcMasks.mat', 'lrmcMasks');
 if ~any(cellfun(@(x) any(x(:)), lrmcMasks)) && ~args.BITWISE_OR
     objects = emptyObjects;
     return;
@@ -100,8 +99,8 @@ end
 combinedMasks = combineMasks(amfdMasks, lrmcMasks, args.BITWISE_OR);
 if args.DEBUG
     saveMasks(combinedMasks, 'output/combined');
+    save('output/combinedMasks.mat', 'combinedMasks');
 end
-save('output/combinedMasks.mat', 'combinedMasks');
 
 if ~any(cellfun(@(x) any(x(:)), combinedMasks))
     objects = emptyObjects;
@@ -109,9 +108,9 @@ if ~any(cellfun(@(x) any(x(:)), combinedMasks))
 end
 
 objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
-save('output/objects.mat', 'objects');
 
 if args.DEBUG
+    save('output/objects.mat', 'objects');
     saveObjectsToTxt(objects, 'output/objects.txt');
     drawBoundingBoxesOnFrames(imageSequence, objects, 'output/frames');
 end
