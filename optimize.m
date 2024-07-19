@@ -239,7 +239,9 @@ outputDir = 'output/';
 if ~isfolder(outputDir)
     mkdir(outputDir);
 end
-resultsFile = fullfile(outputDir, sprintf('results_%.4f_%.4f_%.4f.txt', precision, recall, f1Score));
+uniqueID = tempname(outputDir); % Generates a unique file name
+[~, uniqueFileName, ~] = fileparts(uniqueID); % Extracts the unique part of the file name
+resultsFile = fullfile(outputDir, [uniqueFileName, '.txt']); % Adds .txt extension
 paramStr = sprintf('%.4f ', params);
 fileID = fopen(resultsFile, 'a');
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
