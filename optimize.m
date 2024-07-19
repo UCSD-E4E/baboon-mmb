@@ -196,7 +196,7 @@ for frame = uniqueFrames
                     end
                 end
                 if maxOverlap > 0
-                    TP = TP + 1
+                    TP = TP + 1;
                     matchedGt(bestMatchedIdx) = true;
                 else
                     FP = FP + 1;
@@ -213,7 +213,7 @@ for frame = uniqueFrames
                     if ~matchedGt(i)
                         bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
                         if isequal(bbGt, bbDet)
-                            TP = TP + 1
+                            TP = TP + 1;
                             matchedGt(i) = true;
                             perfectMatch = true;
                             break;
