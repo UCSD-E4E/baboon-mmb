@@ -110,7 +110,7 @@ end
 end
 
 function [precision, recall] = evaluateParams(params, results, groundTruthData)
-printf('Running parameters: %s\n', sprintf('%.4f ', params));
+fprintf('Running parameters: %s\n', sprintf('%.4f ', params));
 % Initialize detection and set default values for counts
 detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
     'AREA_MIN', params(2), 'AREA_MAX', params(3), ...
@@ -122,7 +122,7 @@ detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
     'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
 
 
-printf('Evaluating parameters: %s\n', sprintf('%.4f ', params));
+fprintf('Evaluating parameters: %s\n', sprintf('%.4f ', params));
 TP = 0; FP = 0; FN = 0;
 
 % Ensure detectedData is not empty
