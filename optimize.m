@@ -142,29 +142,25 @@ for frame = uniqueFrames
     
     switch results.OptimizationType
         case 1
-            matchedDet = false(1, numDet);
+            matchedDetections = false(numDet, 1);
+            matchedGroundTruth = false(numGt, 1);
+            
             for i = 1:numGt
-                gtOverlap = false;
                 bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
                 
                 for j = 1:numDet
                     bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
                     overlapRatio = bboxOverlapRatio(bbGt, bbDet);
                     if overlapRatio > 0
-                        gtOverlap = true;
-                        matchedDet(j) = true;
-                        break;
+                        matchedDetections(j) = true;
+                        matchedGroundTruth(i) = true;
                     end
                 end
-
-                if gtOverlap
-                    TP = TP + 1;
-                else
-                    FN = FN + 1;
-                end
             end
-
-            FP = FP + sum(~matchedDet);
+            
+            TP = TP + sum(matchedGroundTruth);
+            FP = FP + sum(~matchedDetections);
+            FN = FN + sum(~matchedGroundTruth);
         case 2
             costMatrix = largeCost * ones(numGt, numDet);
             
