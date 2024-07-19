@@ -139,51 +139,89 @@ for frame = uniqueFrames
     
     switch results.OptimizationType
         case 1
-            % Simple overlap check
             for i = 1:numGt
-                gtOverlap = any(arrayfun(@(j) bboxOverlapRatio([gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height], ...
-                    [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height]) > 0, ...
-                    1:numDet));
-                TP = TP + gtOverlap;
-                FN = FN + ~gtOverlap;
+                gtOverlap = false;
+                for j = 1:numDet
+                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                    if overlapRatio > 0
+                        gtOverlap = true;
+                        break;
+                    end
+                end
+                if gtOverlap
+                    TP = TP + 1;
+                else
+                    FN = FN + 1;
+                end
             end
             FP = numDet - TP;
         case 2
-            % Cost matrix creation and Hungarian method
-            costMatrix = largeCost * ones(numGt, numDet) + arrayfun(@(i, j) 1 - bboxOverlapRatio([gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height], ...
-                [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height]), ...
-                (1:numGt).', (1:numDet), 'UniformOutput', false);
+            costMatrix = largeCost * ones(numGt, numDet);
+            
+            for i = 1:numGt
+                for j = 1:numDet
+                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                    if overlapRatio > 0
+                        costMatrix(i, j) = 1 - overlapRatio;
+                    end
+                end
+            end
+            
             [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
             TP = TP + size(assignments, 1);
-            FP = length(unassignedCols);
-            FN = length(unassignedRows);
+            FP = FP + length(unassignedCols);
+            FN = FN + length(unassignedRows);
         case 3
-            % Best match tracking
             matchedGt = false(1, numGt);
             for j = 1:numDet
-                [maxOverlap, bestMatchedIdx] = max(arrayfun(@(i) bboxOverlapRatio([gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height], ...
-                    [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height]), ...
-                    1:numGt));
+                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                maxOverlap = 0;
+                bestMatchedIdx = 0;
+                for i = 1:numGt
+                    if ~matchedGt(i)
+                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                        overlapRatio = bboxOverlapRatio(bbGt, bbDet);
+                        if overlapRatio > maxOverlap
+                            maxOverlap = overlapRatio;
+                            bestMatchedIdx = i;
+                        end
+                        
+                    end
+                end
                 if maxOverlap > 0
-                    TP = TP + 1;
+                    TP = TP + 1
                     matchedGt(bestMatchedIdx) = true;
                 else
                     FP = FP + 1;
                 end
             end
-            FN = sum(~matchedGt);
+            
+            FN = FN + sum(~matchedGt);
         case 4
-            % Exact match
             matchedGt = false(1, numGt);
             for j = 1:numDet
-                perfectMatch = any(arrayfun(@(i) isequal([gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height], ...
-                    [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height]) && ~matchedGt(i), ...
-                    1:numGt));
-                TP = TP + perfectMatch;
-                FP = FP + ~perfectMatch;
-                matchedGt = matchedGt | perfectMatch;
+                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
+                perfectMatch = false;
+                for i = 1:numGt
+                    if ~matchedGt(i)
+                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                        if isequal(bbGt, bbDet)
+                            TP = TP + 1
+                            matchedGt(i) = true;
+                            perfectMatch = true;
+                            break;
+                        end
+                    end
+                end
+                if ~perfectMatch
+                    FP = FP + 1;
+                end
             end
-            FN = sum(~matchedGt);
+            FN = FN + sum(~matchedGt);
     end
 end
 
@@ -199,20 +237,3 @@ fileID = fopen(resultsFile, 'a');
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
-
-function groundTruthData = loadGroundTruth(filename)
-    groundTruthFile = load(filename);
-    numEntries = size(groundTruthFile, 1);
-    template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-    groundTruthData = repmat(template, numEntries, 1);
-    for i = 1:numEntries
-        groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-        groundTruthData(i).id = groundTruthFile(i, 2);
-        groundTruthData(i).x = groundTruthFile(i, 3);
-        groundTruthData(i).y = groundTruthFile(i, 4);
-        groundTruthData(i).width = groundTruthFile(i, 5);
-        groundTruthData(i).height = groundTruthFile(i, 6);
-        groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-        groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-    end
-    end
