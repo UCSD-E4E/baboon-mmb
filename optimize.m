@@ -110,6 +110,7 @@ end
 end
 
 function [precision, recall] = evaluateParams(params, results, groundTruthData)
+printf('Running parameters: %s\n', sprintf('%.4f ', params));
 % Initialize detection and set default values for counts
 detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
     'AREA_MIN', params(2), 'AREA_MAX', params(3), ...
@@ -120,6 +121,8 @@ detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
     'GAMMA1_PARAM', params(11), 'GAMMA2_PARAM', params(12), ...
     'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
 
+
+printf('Evaluating parameters: %s\n', sprintf('%.4f ', params));
 TP = 0; FP = 0; FN = 0;
 
 % Ensure detectedData is not empty
@@ -231,7 +234,12 @@ recall = TP / (TP + FN + eps);
 f1Score = (2 * precision * recall) / (precision + recall);
 
 % Log results
-resultsFile = [tempname, '.txt'];
+fprintf('Precision: %.4f Recall: %.4f F1: %.4f\n', precision, recall, f1Score);
+outputDir = 'output/';
+if ~isfolder(outputDir)
+    mkdir(outputDir);
+end
+resultsFile = fullfile(outputDir, sprintf('results_%.4f_%.4f_%.4f.txt', precision, recall, f1Score));
 paramStr = sprintf('%.4f ', params);
 fileID = fopen(resultsFile, 'a');
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
