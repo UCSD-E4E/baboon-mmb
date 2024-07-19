@@ -142,24 +142,29 @@ for frame = uniqueFrames
     
     switch results.OptimizationType
         case 1
+            matchedDet = false(1, numDet);
             for i = 1:numGt
                 gtOverlap = false;
+                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                
                 for j = 1:numDet
-                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
                     bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
                     overlapRatio = bboxOverlapRatio(bbGt, bbDet);
                     if overlapRatio > 0
                         gtOverlap = true;
+                        matchedDet(j) = true;
                         break;
                     end
                 end
+
                 if gtOverlap
                     TP = TP + 1;
                 else
                     FN = FN + 1;
                 end
             end
-            FP = numDet - TP;
+
+            FP = FP + sum(~matchedDet);
         case 2
             costMatrix = largeCost * ones(numGt, numDet);
             
@@ -229,9 +234,23 @@ for frame = uniqueFrames
 end
 
 % Calculate precision, recall, and F1-score
-precision = TP / (TP + FP + eps);
-recall = TP / (TP + FN + eps);
-f1Score = (2 * precision * recall) / (precision + recall + eps);
+if (TP + FP) == 0
+    precision = 0;
+else
+    precision = TP / (TP + FP);
+end
+
+if (TP + FN) == 0
+    recall = 0;
+else
+    recall = TP / (TP + FN);
+end
+
+if (precision + recall) == 0
+    f1Score = 0;
+else
+    f1Score = 2 * (precision * recall) / (precision + recall);
+end
 
 % Log results
 fprintf('Precision: %.4f Recall: %.4f F1: %.4f\n', precision, recall, f1Score);
