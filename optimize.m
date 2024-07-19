@@ -55,7 +55,7 @@ function options = configureOptions(results)
 stateFile = 'output/gamultiobj_state.mat';
 if results.Continue && isfile(stateFile)
     load(stateFile, 'state', 'options');
-    options.InitialPopulationMatrix = state.Population; 
+    options.InitialPopulationMatrix = state.Population;
     options.MaxGenerations = results.MaxGenerations - state.Generation;
     fprintf('Continuing from saved state...\n');
 else
@@ -64,7 +64,20 @@ end
 end
 
 function [x, Fval, exitFlag, Output] = performOptimization(results, options)
-groundTruthData = loadGroundTruth(results.GroundTruthPath);
+groundTruthFile = load(results.GroundTruthPath);
+numEntries = size(groundTruthFile, 1);
+template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+groundTruthData = repmat(template, numEntries, 1);
+for i = 1:numEntries
+    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+    groundTruthData(i).id = groundTruthFile(i, 2);
+    groundTruthData(i).x = groundTruthFile(i, 3);
+    groundTruthData(i).y = groundTruthFile(i, 4);
+    groundTruthData(i).width = groundTruthFile(i, 5);
+    groundTruthData(i).height = groundTruthFile(i, 6);
+    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+end
 
 FitnessFunction = @(params) evaluateParams(params, results, groundTruthData);
 
@@ -186,3 +199,20 @@ fileID = fopen(resultsFile, 'a');
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
+
+function groundTruthData = loadGroundTruth(filename)
+    groundTruthFile = load(filename);
+    numEntries = size(groundTruthFile, 1);
+    template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+    groundTruthData = repmat(template, numEntries, 1);
+    for i = 1:numEntries
+        groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+        groundTruthData(i).id = groundTruthFile(i, 2);
+        groundTruthData(i).x = groundTruthFile(i, 3);
+        groundTruthData(i).y = groundTruthFile(i, 4);
+        groundTruthData(i).width = groundTruthFile(i, 5);
+        groundTruthData(i).height = groundTruthFile(i, 6);
+        groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+        groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+    end
+    end
