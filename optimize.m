@@ -231,7 +231,7 @@ end
 % Calculate precision, recall, and F1-score
 precision = TP / (TP + FP + eps);
 recall = TP / (TP + FN + eps);
-f1Score = (2 * precision * recall) / (precision + recall);
+f1Score = (2 * precision * recall) / (precision + recall + eps);
 
 % Log results
 fprintf('Precision: %.4f Recall: %.4f F1: %.4f\n', precision, recall, f1Score);
