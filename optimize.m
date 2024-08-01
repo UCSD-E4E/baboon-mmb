@@ -1,102 +1,105 @@
 function optimize(varargin)
-% Set up the input parser and define parameter validations
-parser = setupInputParser();
-parse(parser, varargin{:});
-userParams = convertParams(parser.Results);
+    % Optimize function entry point. Parses inputs, configures options,
+    % performs optimization, and handles results.
+    
+    % Set up the input parser and define parameter validations
+    parser = setupInputParser();
+    parse(parser, varargin{:});
+    params = convertParams(parser.Results);
 
-% Conditionally load a saved state or initialize optimization options
-options = configureOptions(userParams);
+    % Conditionally load a saved state or initialize optimization options
+    options = configureOptions(params);
 
-% Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(userParams, options);
+    % Perform the optimization
+    [solution, fval, exitFlag, output] = performOptimization(params, options);
 
-% Save results and plot the Pareto front
-saveOptimizationResults(solution, fval, exitFlag, output);
-plotParetoFront(fval);
+    % Save results and plot the Pareto front
+    saveOptimizationResults(solution, fval, exitFlag, output);
+    plotParetoFront(fval);
 end
 
 function parser = setupInputParser()
-% Setup input parser with parameter validations
-parser = inputParser;
+    % Setup input parser with parameter validations
+    parser = inputParser;
 
-validPath = @(x) ischar(x) && isfolder(x);
-validFile = @(x) ischar(x) && isfile(x);
-validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
-validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
-validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
+    validPath = @(x) ischar(x) && isfolder(x);
+    validFile = @(x) ischar(x) && isfile(x);
+    validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
+    validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
+    validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
 
-addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
-addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(parser, 'FrameRate', '10', validNumericStr);
-addParameter(parser, 'PopulationSize', '1000', validNumericStr);
-addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
-addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
-addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(parser, 'UseParallel', 'true', validBooleanStr);
-addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
-addParameter(parser, 'Display', 'iter', @ischar);
-addParameter(parser, 'Continue', 'false', validBooleanStr);
-addParameter(parser, 'OptimizationType', '2', validOptType);
+    addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
+    addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
+    addParameter(parser, 'FrameRate', '10', validNumericStr);
+    addParameter(parser, 'PopulationSize', '1000', validNumericStr);
+    addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
+    addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
+    addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
+    addParameter(parser, 'UseParallel', 'true', validBooleanStr);
+    addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
+    addParameter(parser, 'Display', 'iter', @ischar);
+    addParameter(parser, 'Continue', 'false', validBooleanStr);
+    addParameter(parser, 'OptimizationType', '2', validOptType);
 end
 
 function results = convertParams(parsedResults)
-% Convert parameters to their appropriate data types
-fnames = fieldnames(parsedResults);
-results = struct();
-for i = 1:length(fnames)
-    switch fnames{i}
-        case {'InputPath', 'GroundTruthPath', 'Display'}
-            results.(fnames{i}) = parsedResults.(fnames{i});
-        case {'UseParallel', 'Continue'}
-            results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
-        otherwise
-            results.(fnames{i}) = str2double(parsedResults.(fnames{i}));
+    % Convert parameters to their appropriate data types
+    fnames = fieldnames(parsedResults);
+    results = struct();
+    for i = 1:length(fnames)
+        switch fnames{i}
+            case {'InputPath', 'GroundTruthPath', 'Display'}
+                results.(fnames{i}) = parsedResults.(fnames{i});
+            case {'UseParallel', 'Continue'}
+                results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
+            otherwise
+                results.(fnames{i}) = str2double(parsedResults.(fnames{i}));
+        end
     end
-end
 end
 
 function options = configureOptions(params)
-% Configure optimization options, optionally continuing from a saved state
-stateFile = 'output/gamultiobj_state.mat';
-if params.Continue && isfile(stateFile)
-    load(stateFile, 'state', 'options');
-    options.InitialPopulationMatrix = state.Population;
-    options.MaxGenerations = params.MaxGenerations - state.Generation;
-    fprintf('Continuing from saved state...\n');
-else
-    options = optimoptions('gamultiobj', ...
-        'PopulationSize', params.PopulationSize, ...
-        'MaxGenerations', params.MaxGenerations, ...
-        'FunctionTolerance', params.FunctionTolerance, ...
-        'MaxStallGenerations', params.MaxStallGenerations, ...
-        'UseParallel', params.UseParallel, ...
-        'ParetoFraction', params.ParetoFraction, ...
-        'Display', params.Display, ...
-        'OutputFcn', @saveCheckpoint);
-end
+    % Configure optimization options, optionally continuing from a saved state
+    stateFile = 'output/gamultiobj_state.mat';
+    if params.Continue && isfile(stateFile)
+        load(stateFile, 'state', 'options');
+        options.InitialPopulationMatrix = state.Population;
+        options.MaxGenerations = params.MaxGenerations - state.Generation;
+        fprintf('Continuing from saved state...\n');
+    else
+        options = optimoptions('gamultiobj', ...
+            'PopulationSize', params.PopulationSize, ...
+            'MaxGenerations', params.MaxGenerations, ...
+            'FunctionTolerance', params.FunctionTolerance, ...
+            'MaxStallGenerations', params.MaxStallGenerations, ...
+            'UseParallel', params.UseParallel, ...
+            'ParetoFraction', params.ParetoFraction, ...
+            'Display', params.Display, ...
+            'OutputFcn', @saveCheckpoint);
+    end
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options)
-% Perform the optimization using specified parameters and options
-groundTruthData = loadGroundTruth(params.GroundTruthPath);
-[height, width] = getImageDimensions(params.InputPath);
-frameArea = height * width;
-frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
-frameDiagonal = sqrt(width^2 + height^2);
-maxDimension = max(height, width);
+    % Perform the optimization using specified parameters and options
+    groundTruthData = loadGroundTruth(params.GroundTruthPath);
+    [height, width] = getImageDimensions(params.InputPath);
+    frameArea = height * width;
+    frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
+    frameDiagonal = sqrt(width^2 + height^2);
+    maxDimension = max(height, width);
 
-FitnessFunction = @(params) evaluateParams(params, groundTruthData, height, width, frameCount, frameArea, frameDiagonal);
+    FitnessFunction = @(params) evaluateParams(params, groundTruthData, height, width, frameCount, frameArea, frameDiagonal);
 
-% Define bounds and integer constraints for optimization variables
-numberOfVariables = 15;
-lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
-ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    maxDimension, frameCount - 1, Inf, 1, 1];
-intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
+    % Define bounds and integer constraints for optimization variables
+    numberOfVariables = 15;
+    lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
+    ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
+        frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
+        maxDimension, frameCount - 1, Inf, 1, 1];
+    intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
 
-% Perform multi-objective optimization
-[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+    % Perform multi-objective optimization
+    [x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
         % Define nonlinear inequality and equality constraints
@@ -110,6 +113,31 @@ intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
         % Nonlinear equality constraints (ceq = 0)
         ceq = [];
     end
+end
+
+function groundTruthData = loadGroundTruth(groundTruthPath)
+    % Load and process ground truth data
+    groundTruthFile = load(groundTruthPath);
+    numEntries = size(groundTruthFile, 1);
+    template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+    groundTruthData = repmat(template, numEntries, 1);
+    for i = 1:numEntries
+        groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+        groundTruthData(i).id = groundTruthFile(i, 2);
+        groundTruthData(i).x = groundTruthFile(i, 3);
+        groundTruthData(i).y = groundTruthFile(i, 4);
+        groundTruthData(i).width = groundTruthFile(i, 5);
+        groundTruthData(i).height = groundTruthFile(i, 6);
+        groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+        groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+    end
+end
+
+function [height, width] = getImageDimensions(inputPath)
+    % Get image dimensions from the first image in the input path
+    firstImageFile = dir(fullfile(inputPath, '*.jpg'));
+    firstImage = imread(fullfile(inputPath, firstImageFile(1).name));
+    [height, width, ~] = size(firstImage);
 end
 
 function [precision, recall] = evaluateParams(params, userParams, groundTruthData)
