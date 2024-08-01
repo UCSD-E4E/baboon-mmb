@@ -2,19 +2,19 @@ function objects = baboon_mmb(varargin)
 p = inputParser;
 
 % Define parameters with validation functions
-addParameter(p, 'K', 4, @(x) isnumeric(x) && x >= 0 && x <= 8);
+addParameter(p, 'K', 4, @(x) isnumeric(x) && x >= 0);
 addParameter(p, 'CONNECTIVITY', 8, @(x) isnumeric(x) && any(x == [4, 8]));
-addParameter(p, 'AREA_MIN', 5, @(x) isnumeric(x) && x >= 0 && x <= 100);
-addParameter(p, 'AREA_MAX', 80, @(x) isnumeric(x) && x >= 0 && x <= 100);
-addParameter(p, 'ASPECT_RATIO_MIN', 1, @(x) isnumeric(x) && x >= 0 && x <= 10);
-addParameter(p, 'ASPECT_RATIO_MAX', 6, @(x) isnumeric(x) && x >= 0 && x <= 10);
-addParameter(p, 'L', 4, @(x) isnumeric(x) && x >= 1 && x <= 10);
-addParameter(p, 'KERNEL', 3, @(x) isnumeric(x) && x >= 1 && x <= 11);
+addParameter(p, 'AREA_MIN', 5, @(x) isnumeric(x) && x >= 1);
+addParameter(p, 'AREA_MAX', 80, @(x) isnumeric(x) && x >= 1);
+addParameter(p, 'ASPECT_RATIO_MIN', 1, @(x) isnumeric(x) && x >= 1);
+addParameter(p, 'ASPECT_RATIO_MAX', 6, @(x) isnumeric(x) && x >= 1);
+addParameter(p, 'L', 4, @(x) isnumeric(x) && x >= 0);
+addParameter(p, 'KERNEL', 3, @(x) isnumeric(x) && x >= 0);
 addParameter(p, 'BITWISE_OR', false, @(x) islogical(x));
-addParameter(p, 'PIPELINE_LENGTH', 5, @(x) isnumeric(x) && x >= 1 && x <= 10);
-addParameter(p, 'PIPELINE_SIZE', 7, @(x) isnumeric(x) && x >= 1 && x <= 11);
-addParameter(p, 'H', 3, @(x) isnumeric(x) && x >= 1 && x <= 10);
-addParameter(p, 'MAX_NITER_PARAM', 10, @(x) isnumeric(x) && x >= 1 && x <= 20);
+addParameter(p, 'PIPELINE_LENGTH', 5, @(x) isnumeric(x) && x >= 0);
+addParameter(p, 'PIPELINE_SIZE', 7, @(x) isnumeric(x) && x >= 0);
+addParameter(p, 'H', 3, @(x) isnumeric(x) && x >= 0);
+addParameter(p, 'MAX_NITER_PARAM', 10, @(x) isnumeric(x) && x >= 1);
 addParameter(p, 'GAMMA1_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
 addParameter(p, 'GAMMA2_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
 addParameter(p, 'FRAME_RATE', 10, @(x) isnumeric(x) && x >= 1);
@@ -25,22 +25,22 @@ parse(p, varargin{:});
 args = p.Results;
 
 % Adjust parameters
-args.K = double(args.K);
-args.CONNECTIVITY = uint8(args.CONNECTIVITY);
-args.AREA_MIN = double(args.AREA_MIN);
-args.AREA_MAX = double(args.AREA_MAX);
+args.K = uint64(args.K);
+args.CONNECTIVITY = uint64(args.CONNECTIVITY);
+args.AREA_MIN = uint64(args.AREA_MIN);
+args.AREA_MAX = uint64(args.AREA_MAX);
 args.ASPECT_RATIO_MIN = double(args.ASPECT_RATIO_MIN);
 args.ASPECT_RATIO_MAX = double(args.ASPECT_RATIO_MAX);
-args.L = uint8(args.L);
-args.KERNEL = uint8(args.KERNEL);
+args.L = double(args.L);
+args.KERNEL = uint64(args.KERNEL);
 args.BITWISE_OR = logical(args.BITWISE_OR);
-args.PIPELINE_LENGTH = uint8(args.PIPELINE_LENGTH);
-args.PIPELINE_SIZE = uint8(args.PIPELINE_SIZE);
-args.H = uint8(args.H);
-args.MAX_NITER_PARAM = uint8(args.MAX_NITER_PARAM);
+args.PIPELINE_LENGTH = uint64(args.PIPELINE_LENGTH);
+args.PIPELINE_SIZE = uint64(args.PIPELINE_SIZE);
+args.H = uint64(args.H);
+args.MAX_NITER_PARAM = uint64(args.MAX_NITER_PARAM);
 args.GAMMA1_PARAM = double(args.GAMMA1_PARAM);
 args.GAMMA2_PARAM = double(args.GAMMA2_PARAM);
-args.FRAME_RATE = uint8(args.FRAME_RATE);
+args.FRAME_RATE = uint64(args.FRAME_RATE);
 
 % Check if /output folder exists
 if ~exist('output', 'dir')
@@ -52,23 +52,69 @@ emptyObjects = struct('frameNumber', {}, 'id', {}, 'x', {}, 'y', {}, 'width', {}
 
 % Validate parameters
 if args.AREA_MIN > args.AREA_MAX
-    objects = emptyObjects;
-    return;
+    error('Invalid parameters: AREA_MIN must be less than or equal to AREA_MAX');
 end
 
 if args.ASPECT_RATIO_MIN > args.ASPECT_RATIO_MAX
-    objects = emptyObjects;
-    return;
+    error('Invalid parameters: ASPECT_RATIO_MIN must be less than or equal to ASPECT_RATIO_MAX');
 end
 
 if args.H > args.PIPELINE_LENGTH
-    objects = emptyObjects;
-    return;
+    error('Invalid parameters: H must be less than or equal to PIPELINE_LENGTH');
 end
 
 if args.GAMMA1_PARAM > args.GAMMA2_PARAM
-    objects = emptyObjects;
-    return;
+    error('Invalid parameters: GAMMA1_PARAM must be less than or equal to GAMMA2_PARAM');
+end
+
+% Load the first image to get dimensions
+firstImage = imread(fullfile(args.IMAGE_SEQUENCE, dir(fullfile(args.IMAGE_SEQUENCE, '*.jpg')).name));
+[height, width, ~] = size(firstImage);
+
+% Get the total number of frames
+frameCount = numel(dir(fullfile(args.IMAGE_SEQUENCE, '*.jpg')));
+
+% Calculate the diagonal of the frame
+frameDiagonal = sqrt(width^2 + height^2);
+
+% Check AREA_MIN and AREA_MAX
+if args.AREA_MAX > width * height
+    error('Invalid parameters: AREA_MAX must be less than or equal to image width * height');
+end
+
+if args.AREA_MIN > width * height
+    error('Invalid parameters: AREA_MIN must be less than or equal to image width * height');
+end
+
+if args.L > frameCount / args.FRAME_RATE
+    error('Invalid parameters: L must be less than or equal to the total seconds of the video');
+end
+
+% Check ASPECT_RATIO_MIN and ASPECT_RATIO_MAX
+maxDimension = max(width, height);
+if args.ASPECT_RATIO_MAX > maxDimension
+    error('Invalid parameters: ASPECT_RATIO_MAX must be less than or equal to max(image width, image height)');
+end
+
+if args.ASPECT_RATIO_MIN > maxDimension
+    error('Invalid parameters: ASPECT_RATIO_MIN must be less than or equal to max(image width, image height)');
+end
+
+if args.KERNEL > maxDimension
+    error('Invalid parameters: KERNEL must be less than or equal to max(image width, image height)');
+end
+
+% Check PIPELINE_LENGTH and H
+if args.PIPELINE_LENGTH >= frameCount
+    error('Invalid parameters: PIPELINE_LENGTH must be less than the total number of frames minus 1');
+end
+
+if args.H >= frameCount
+    error('Invalid parameters: H must be less than the total number of frames minus 1');
+end
+
+if args.PIPELINE_SIZE > frameDiagonal
+    error('Invalid parameters: PIPELINE_SIZE must be less than or equal to the diagonal of the frame');
 end
 
 imageSequence = loadImageSequence(args.IMAGE_SEQUENCE);

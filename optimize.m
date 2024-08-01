@@ -79,14 +79,43 @@ for i = 1:numEntries
     groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
 end
 
-FitnessFunction = @(params) evaluateParams(params, results, groundTruthData);
+% Load the fisrt image to get dimensions
+firstImage = imread(fullfile(results.InputPath, dir(fullfile(results.InputPath, '*.jpg')).name));
+[height, width, ~] = size(firstImage);
+maxDimension = max(height, width);
+frameCount = numel(dir(fullfile(results.InputPath, '*.jpg')));
+frameArea = height * width;
+frameDiagonal = sqrt(width^2 + height^2);
 
-numberOfVariables = 12;
-lb = [2, 3, 50, 0, 4, 2, 3, 3, 1, 1, 0, 0];
-ub = [6, 10, 100, 2, 8, 10, 10, 15, 5, 20, 1, 1];
-intIndices = [6, 7, 8, 9, 10];
+FitnessFunction = @(params) evaluateParams(params, results, groundTruthData, height, width, maxDimension, frameCount, frameArea, frameDiagonal);
 
-[x, Fval, exitFlag, Output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, [], intIndices, options);
+% Define the number of variables and constraints for the optimization
+numberOfVariables = 15;
+
+% Define the lower and upper bounds for each parameter
+lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
+ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
+    frameCount / results.FrameRate, maxDimension, 2, frameCount - 1, ...
+    maxDimension, frameCount - 1, Inf, 1, 1];
+
+% Specify which indices are integers
+intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
+
+% Use gamultiobj for multi-objective optimization with constraints
+[x, Fval, exitFlag, Output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+
+    function [c, ceq] = constraintFunction(x)
+        % Nonlinear inequality constraints (c <= 0)
+        c = [
+            x(3) - x(4);  % AREA_MIN <= AREA_MAX
+            x(5) - x(6);  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
+            x(12) - x(10); % H <= PIPELINE_LENGTH
+            x(14) - x(15); % GAMMA1_PARAM <= GAMMA2_PARAM
+            ];
+        
+        % Nonlinear equality constraints (ceq = 0)
+        ceq = [];
+    end
 end
 
 function saveOptimizationResults(x, Fval, exitFlag, Output)
@@ -111,14 +140,22 @@ end
 
 function [precision, recall] = evaluateParams(params, results, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', params));
+
+% Map the auxiliary variables
+connectivityOptions = [4, 8];
+connectivityValue = connectivityOptions(params(2));
+bitwiseOrOptions = [false, true];
+bitwiseOrValue = bitwiseOrOptions(params(9));
+
+
 % Initialize detection and set default values for counts
-detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', 8, ...
-    'AREA_MIN', params(2), 'AREA_MAX', params(3), ...
-    'ASPECT_RATIO_MIN', params(4), 'ASPECT_RATIO_MAX', params(5), ...
-    'L', params(6), 'KERNEL', 3, 'BITWISE_OR', false, ...
-    'PIPELINE_LENGTH', params(7), 'PIPELINE_SIZE', params(8), ...
-    'H', params(9), 'MAX_NITER_PARAM', params(10), ...
-    'GAMMA1_PARAM', params(11), 'GAMMA2_PARAM', params(12), ...
+detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', connectivityValue, ...
+    'AREA_MIN', params(3), 'AREA_MAX', params(4), ...
+    'ASPECT_RATIO_MIN', params(5), 'ASPECT_RATIO_MAX', params(6), ...
+    'L', params(7), 'KERNEL', params(8), 'BITWISE_OR', bitwiseOrValue, ...
+    'PIPELINE_LENGTH', params(10), 'PIPELINE_SIZE', params(11), ...
+    'H', params(12), 'MAX_NITER_PARAM', params(13), ...
+    'GAMMA1_PARAM', params(14), 'GAMMA2_PARAM', params(15), ...
     'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
 
 

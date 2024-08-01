@@ -37,7 +37,7 @@ for t = 2:(numFrames - 1)
     
     for propIdx = 1:length(props)
         bb = props(propIdx).BoundingBox;
-        aspectRatio = bb(3) / bb(4);
+        aspectRatio = max(bb(3), bb(4)) / min(bb(3), bb(4));
         if props(propIdx).Area < AREA_MIN || props(propIdx).Area > AREA_MAX || aspectRatio < ASPECT_RATIO_MIN || aspectRatio > ASPECT_RATIO_MAX
             binaryImage(labeledImage == propIdx) = 0;
         end
