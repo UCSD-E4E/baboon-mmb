@@ -1,111 +1,105 @@
 function optimize(varargin)
 % Set up the input parser and define parameter validations
-p = setupInputParser();
-parse(p, varargin{:});
-results = convertParams(p.Results);
+parser = setupInputParser();
+parse(parser, varargin{:});
+results = convertParams(parser.Results);
 
 % Conditionally load a saved state or initialize optimization options
 options = configureOptions(results);
 
 % Perform the optimization
-[x, Fval, exitFlag, Output] = performOptimization(results, options);
+[solution, fval, exitFlag, output] = performOptimization(params, options);
 
 % Save results and plot the Pareto front
-saveOptimizationResults(x, Fval, exitFlag, Output);
-plotParetoFront(Fval);
+saveOptimizationResults(solution, fval, exitFlag, output);
+plotParetoFront(fval);
 end
 
-function p = setupInputParser()
+function parser = setupInputParser()
+% Setup input parser with parameter validations
+parser = inputParser;
+
 validPath = @(x) ischar(x) && isfolder(x);
 validFile = @(x) ischar(x) && isfile(x);
 validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
 validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
 validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
 
-p = inputParser;
-addParameter(p, 'InputPath', 'input/viso_video_1', validPath);
-addParameter(p, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(p, 'FrameRate', '10', validNumericStr);
-addParameter(p, 'PopulationSize', '1000', validNumericStr);
-addParameter(p, 'MaxGenerations', '1e9', validNumericStr);
-addParameter(p, 'FunctionTolerance', '1e-10', validNumericStr);
-addParameter(p, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(p, 'UseParallel', 'true', validBooleanStr);
-addParameter(p, 'ParetoFraction', '0.7', validNumericStr);
-addParameter(p, 'Display', 'iter', @ischar);
-addParameter(p, 'Continue', 'false', validBooleanStr);
-addParameter(p, 'OptimizationType', '2', validOptType);
+addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
+addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
+addParameter(parser, 'FrameRate', '10', validNumericStr);
+addParameter(parser, 'PopulationSize', '1000', validNumericStr);
+addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
+addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
+addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
+addParameter(parser, 'UseParallel', 'true', validBooleanStr);
+addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
+addParameter(parser, 'Display', 'iter', @ischar);
+addParameter(parser, 'Continue', 'false', validBooleanStr);
+addParameter(parser, 'OptimizationType', '2', validOptType);
 end
 
-function results = convertParams(pResults)
-% Convert all parameters to their appropriate data types
-fnames = fieldnames(pResults);
+function results = convertParams(parsedResults)
+% Convert parameters to their appropriate data types
+fnames = fieldnames(parsedResults);
+results = struct();
 for i = 1:length(fnames)
-    if contains(fnames{i}, 'Path') || strcmp(fnames{i}, 'Display')
-        results.(fnames{i}) = pResults.(fnames{i});
-    elseif strcmp(fnames{i}, 'UseParallel') || strcmp(fnames{i}, 'Continue')
-        results.(fnames{i}) = strcmpi(pResults.(fnames{i}), 'true') || str2double(pResults.(fnames{i})) == 1;
-    else
-        results.(fnames{i}) = str2double(pResults.(fnames{i}));
+    switch fnames{i}
+        case {'InputPath', 'GroundTruthPath', 'Display'}
+            results.(fnames{i}) = parsedResults.(fnames{i});
+        case {'UseParallel', 'Continue'}
+            results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
+        otherwise
+            results.(fnames{i}) = str2double(parsedResults.(fnames{i}));
     end
 end
 end
 
-function options = configureOptions(results)
+function options = configureOptions(params)
+% Configure optimization options, optionally continuing from a saved state
 stateFile = 'output/gamultiobj_state.mat';
-if results.Continue && isfile(stateFile)
+if params.Continue && isfile(stateFile)
     load(stateFile, 'state', 'options');
     options.InitialPopulationMatrix = state.Population;
-    options.MaxGenerations = results.MaxGenerations - state.Generation;
+    options.MaxGenerations = params.MaxGenerations - state.Generation;
     fprintf('Continuing from saved state...\n');
 else
-    options = optimoptions('gamultiobj', 'PopulationSize', results.PopulationSize, 'MaxGenerations', results.MaxGenerations, 'FunctionTolerance', results.FunctionTolerance, 'MaxStallGenerations', results.MaxStallGenerations, 'UseParallel', results.UseParallel, 'ParetoFraction', results.ParetoFraction, 'Display', results.Display, 'OutputFcn', @saveCheckpoint);
+    options = optimoptions('gamultiobj', ...
+        'PopulationSize', params.PopulationSize, ...
+        'MaxGenerations', params.MaxGenerations, ...
+        'FunctionTolerance', params.FunctionTolerance, ...
+        'MaxStallGenerations', params.MaxStallGenerations, ...
+        'UseParallel', params.UseParallel, ...
+        'ParetoFraction', params.ParetoFraction, ...
+        'Display', params.Display, ...
+        'OutputFcn', @saveCheckpoint);
 end
 end
 
-function [x, Fval, exitFlag, Output] = performOptimization(results, options)
-groundTruthFile = load(results.GroundTruthPath);
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-end
-
-% Load the fisrt image to get dimensions
-firstImage = imread(fullfile(results.InputPath, dir(fullfile(results.InputPath, '*.jpg')).name));
-[height, width, ~] = size(firstImage);
-maxDimension = max(height, width);
-frameCount = numel(dir(fullfile(results.InputPath, '*.jpg')));
+function [x, fval, exitFlag, output] = performOptimization(params, options)
+% Perform the optimization using specified parameters and options
+groundTruthData = loadGroundTruth(params.GroundTruthPath);
+[height, width] = getImageDimensions(params.InputPath);
 frameArea = height * width;
+frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
+maxDimension = max(height, width);
 
-FitnessFunction = @(params) evaluateParams(params, results, groundTruthData, height, width, maxDimension, frameCount, frameArea, frameDiagonal);
+FitnessFunction = @(params) evaluateParams(params, groundTruthData, height, width, frameCount, frameArea, frameDiagonal);
 
-% Define the number of variables and constraints for the optimization
+% Define bounds and integer constraints for optimization variables
 numberOfVariables = 15;
-
-% Define the lower and upper bounds for each parameter
 lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
 ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / results.FrameRate, maxDimension, 2, frameCount - 1, ...
+    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
     maxDimension, frameCount - 1, Inf, 1, 1];
-
-% Specify which indices are integers
 intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
 
-% Use gamultiobj for multi-objective optimization with constraints
-[x, Fval, exitFlag, Output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+% Perform multi-objective optimization
+[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
-        % Nonlinear inequality constraints (c <= 0)
+        % Define nonlinear inequality and equality constraints
         c = [
             x(3) - x(4);  % AREA_MIN <= AREA_MAX
             x(5) - x(6);  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
@@ -116,26 +110,6 @@ intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
         % Nonlinear equality constraints (ceq = 0)
         ceq = [];
     end
-end
-
-function saveOptimizationResults(x, Fval, exitFlag, Output)
-save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
-end
-
-function plotParetoFront(Fval)
-figure;
-plot(Fval(:,1), Fval(:,2), 'bo');
-xlabel('Precision');
-ylabel('Recall');
-title('Pareto Front');
-saveas(gcf, 'output/pareto_front.png');
-end
-
-function [state, options, optchanged] = saveCheckpoint(options, state, flag)
-optchanged = false;
-if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
-    save('output/gamultiobj_state.mat', 'state', 'options');
-end
 end
 
 function [precision, recall] = evaluateParams(params, results, groundTruthData)
@@ -158,8 +132,6 @@ detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', connectivityValue, ...
     'GAMMA1_PARAM', params(14), 'GAMMA2_PARAM', params(15), ...
     'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
 
-
-fprintf('Evaluating parameters: %s\n', sprintf('%.4f ', params));
 TP = 0; FP = 0; FN = 0;
 
 % Ensure detectedData is not empty
@@ -298,4 +270,24 @@ paramStr = sprintf('%.4f ', params);
 fileID = fopen(resultsFile, 'a');
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
+end
+
+function saveOptimizationResults(x, Fval, exitFlag, Output)
+save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
+end
+
+function plotParetoFront(Fval)
+figure;
+plot(Fval(:,1), Fval(:,2), 'bo');
+xlabel('Precision');
+ylabel('Recall');
+title('Pareto Front');
+saveas(gcf, 'output/pareto_front.png');
+end
+
+function [state, options, optchanged] = saveCheckpoint(options, state, flag)
+optchanged = false;
+if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
+    save('output/gamultiobj_state.mat', 'state', 'options');
+end
 end
