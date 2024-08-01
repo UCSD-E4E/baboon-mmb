@@ -2,13 +2,13 @@ function optimize(varargin)
 % Set up the input parser and define parameter validations
 parser = setupInputParser();
 parse(parser, varargin{:});
-results = convertParams(parser.Results);
+userParams = convertParams(parser.Results);
 
 % Conditionally load a saved state or initialize optimization options
-options = configureOptions(results);
+options = configureOptions(userParams);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options);
+[solution, fval, exitFlag, output] = performOptimization(userParams, options);
 
 % Save results and plot the Pareto front
 saveOptimizationResults(solution, fval, exitFlag, output);
@@ -112,7 +112,7 @@ intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
     end
 end
 
-function [precision, recall] = evaluateParams(params, results, groundTruthData)
+function [precision, recall] = evaluateParams(params, userParams, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', params));
 
 % Map the auxiliary variables
@@ -130,7 +130,7 @@ detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', connectivityValue, ...
     'PIPELINE_LENGTH', params(10), 'PIPELINE_SIZE', params(11), ...
     'H', params(12), 'MAX_NITER_PARAM', params(13), ...
     'GAMMA1_PARAM', params(14), 'GAMMA2_PARAM', params(15), ...
-    'FRAME_RATE', results.FrameRate, 'IMAGE_SEQUENCE', results.InputPath, 'DEBUG', false);
+    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
 
 TP = 0; FP = 0; FN = 0;
 
@@ -149,7 +149,7 @@ for frame = uniqueFrames
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
     
-    switch results.OptimizationType
+    switch userParams.OptimizationType
         case 1
             matchedDetections = false(numDet, 1);
             matchedGroundTruth = false(numGt, 1);
