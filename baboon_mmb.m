@@ -25,7 +25,7 @@ parse(p, varargin{:});
 args = p.Results;
 
 % Adjust parameters
-args.K = uint64(args.K);
+args.K = double(args.K);
 args.CONNECTIVITY = uint64(args.CONNECTIVITY);
 args.AREA_MIN = uint64(args.AREA_MIN);
 args.AREA_MAX = uint64(args.AREA_MAX);

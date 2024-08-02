@@ -47,7 +47,7 @@ std = min(min([
     0.1, ...
     0.1], ...
     abs(mu - lb)), abs(mu - ub));
-intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
+intIndices = [2, 3, 4, 8, 9, 10, 11, 12, 13];
 
 % Conditionally load a saved state or initialize optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
