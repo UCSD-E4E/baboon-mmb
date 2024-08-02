@@ -88,14 +88,14 @@ frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
-FitnessFunction = @(params) evaluateParams(params, groundTruthData, height, width, frameCount, frameArea, frameDiagonal);
+FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
 
 % Define bounds and integer constraints for optimization variables
 numberOfVariables = 15;
 lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
 ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
     frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    maxDimension, frameCount - 1, Inf, 1, 1];
+    frameDiagonal, frameCount - 1, Inf, 1, 1];
 intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
 
 % Perform multi-objective optimization
@@ -117,7 +117,11 @@ end
 
 function groundTruthData = loadGroundTruth(groundTruthPath)
 % Load and process ground truth data
-groundTruthFile = load(groundTruthPath);
+try
+    groundTruthFile = load(groundTruthPath);
+catch
+    error('Failed to load ground truth file: %s', groundTruthPath);
+end
 numEntries = size(groundTruthFile, 1);
 template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
 groundTruthData = repmat(template, numEntries, 1);
@@ -136,28 +140,31 @@ end
 function [height, width] = getImageDimensions(inputPath)
 % Get image dimensions from the first image in the input path
 firstImageFile = dir(fullfile(inputPath, '*.jpg'));
+if isempty(firstImageFile)
+    error('No images found in the input path: %s', inputPath);
+end
 firstImage = imread(fullfile(inputPath, firstImageFile(1).name));
 [height, width, ~] = size(firstImage);
 end
 
-function [precision, recall] = evaluateParams(params, userParams, groundTruthData)
-fprintf('Running parameters: %s\n', sprintf('%.4f ', params));
+function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
+fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
 % Map the auxiliary variables
 connectivityOptions = [4, 8];
-connectivityValue = connectivityOptions(params(2));
+connectivityValue = connectivityOptions(optParams(2));
 bitwiseOrOptions = [false, true];
-bitwiseOrValue = bitwiseOrOptions(params(9));
+bitwiseOrValue = bitwiseOrOptions(optParams(9));
 
 
 % Initialize detection and set default values for counts
-detectedData = baboon_mmb('K', params(1), 'CONNECTIVITY', connectivityValue, ...
-    'AREA_MIN', params(3), 'AREA_MAX', params(4), ...
-    'ASPECT_RATIO_MIN', params(5), 'ASPECT_RATIO_MAX', params(6), ...
-    'L', params(7), 'KERNEL', params(8), 'BITWISE_OR', bitwiseOrValue, ...
-    'PIPELINE_LENGTH', params(10), 'PIPELINE_SIZE', params(11), ...
-    'H', params(12), 'MAX_NITER_PARAM', params(13), ...
-    'GAMMA1_PARAM', params(14), 'GAMMA2_PARAM', params(15), ...
+detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
+    'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
+    'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
+    'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
+    'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
+    'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
+    'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
     'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
 
 TP = 0; FP = 0; FN = 0;
@@ -294,23 +301,34 @@ end
 uniqueID = tempname(outputDir); % Generates a unique file name
 [~, uniqueFileName, ~] = fileparts(uniqueID); % Extracts the unique part of the file name
 resultsFile = fullfile(outputDir, [uniqueFileName, '.txt']); % Adds .txt extension
-paramStr = sprintf('%.4f ', params);
+paramStr = sprintf('%.4f ', optParams);
 fileID = fopen(resultsFile, 'a');
+if fileID == -1
+    error('Failed to open results file: %s', resultsFile);
+end
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
 
 function saveOptimizationResults(x, Fval, exitFlag, Output)
-save('output/final_pareto_solutions.mat', 'x', 'Fval', 'exitFlag', 'Output');
+outputDir = 'output/';
+if ~isfolder(outputDir)
+    mkdir(outputDir);
+end
+save(fullfile(outputDir, 'final_pareto_solutions.mat'), 'x', 'Fval', 'exitFlag', 'Output');
 end
 
 function plotParetoFront(Fval)
+outputDir = 'output/';
+if ~isfolder(outputDir)
+    mkdir(outputDir);
+end
 figure;
 plot(Fval(:,1), Fval(:,2), 'bo');
 xlabel('Precision');
 ylabel('Recall');
 title('Pareto Front');
-saveas(gcf, 'output/pareto_front.png');
+saveas(gcf, fullfile(outputDir, 'pareto_front.png'));
 end
 
 function [state, options, optchanged] = saveCheckpoint(options, state, flag)
