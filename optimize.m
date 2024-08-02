@@ -121,7 +121,8 @@ else
     for i = 1:populationSize
         valid = false;
         while ~valid
-            individual = normrnd(mu, std);
+            % Generate normally distributed random numbers
+            individual = mu + std .* randn(1, numVariables);
             % Ensure the values are within bounds
             if all(individual >= lb) && all(individual <= ub)
                 % Ensure integer constraints
