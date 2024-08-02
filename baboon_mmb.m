@@ -15,8 +15,8 @@ addParameter(p, 'PIPELINE_LENGTH', 5, @(x) isnumeric(x) && x >= 0);
 addParameter(p, 'PIPELINE_SIZE', 7, @(x) isnumeric(x) && x >= 0);
 addParameter(p, 'H', 3, @(x) isnumeric(x) && x >= 0);
 addParameter(p, 'MAX_NITER_PARAM', 10, @(x) isnumeric(x) && x >= 1);
-addParameter(p, 'GAMMA1_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
-addParameter(p, 'GAMMA2_PARAM', 8, @(x) isnumeric(x) && x >= 0 && x <= 1);
+addParameter(p, 'GAMMA1_PARAM', 0.3, @(x) isnumeric(x) && x >= 0 && x <= 1);
+addParameter(p, 'GAMMA2_PARAM', 0.8, @(x) isnumeric(x) && x >= 0 && x <= 1);
 addParameter(p, 'FRAME_RATE', 10, @(x) isnumeric(x) && x >= 1);
 addParameter(p, 'IMAGE_SEQUENCE', '', @(x) ischar(x) || isstring(x));
 addParameter(p, 'DEBUG', true, @(x) islogical(x));
@@ -67,12 +67,23 @@ if args.GAMMA1_PARAM > args.GAMMA2_PARAM
     error('Invalid parameters: GAMMA1_PARAM must be less than or equal to GAMMA2_PARAM');
 end
 
-% Load the first image to get dimensions
-firstImage = imread(fullfile(args.IMAGE_SEQUENCE, dir(fullfile(args.IMAGE_SEQUENCE, '*.jpg')).name));
+% Check if the input image sequence folder is empty or does not contain any .jpg files
+imageFiles = dir(fullfile(args.IMAGE_SEQUENCE, '*.jpg'));
+if isempty(imageFiles)
+    error('No images found in the input path: %s', args.IMAGE_SEQUENCE);
+end
+
+% Read the first image to get dimensions
+try
+    firstImage = imread(fullfile(args.IMAGE_SEQUENCE, imageFiles(1).name));
+catch
+    error('Failed to read the first image in the input path: %s', fullfile(args.IMAGE_SEQUENCE, imageFiles(1).name));
+end
+
 [height, width, ~] = size(firstImage);
 
 % Get the total number of frames
-frameCount = numel(dir(fullfile(args.IMAGE_SEQUENCE, '*.jpg')));
+frameCount = numel(imageFiles);
 
 % Calculate the diagonal of the frame
 frameDiagonal = sqrt(width^2 + height^2);

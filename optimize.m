@@ -7,11 +7,53 @@ parser = setupInputParser();
 parse(parser, varargin{:});
 params = convertParams(parser.Results);
 
+% Get image dimensions from the first image in the input path
+firstImageFile = dir(fullfile(params.InputPath, '*.jpg'));
+if isempty(firstImageFile)
+    error('No images found in the input path: %s', params.InputPath);
+end
+
+try
+    firstImage = imread(fullfile(params.InputPath, firstImageFile(1).name));
+catch
+    error('Failed to read the first image in the input path: %s', fullfile(params.InputPath, firstImageFile(1).name));
+end
+
+[height, width, ~] = size(firstImage);
+frameArea = height * width;
+frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
+frameDiagonal = sqrt(width^2 + height^2);
+maxDimension = max(height, width);
+
+lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
+ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
+    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
+    frameDiagonal, frameCount - 1, Inf, 1, 1];
+mu = [4, 2, 5, 80, 1, 6, 4, 3, 1, 5, 7, 3, 10, 0.3, 0.8];
+std = min([
+    1, ...
+    0.5, ...
+    (ub(3) - lb(3)) / 4, ...
+    (ub(4) - lb(4)) / 4, ...
+    (ub(5) - lb(5)) / 4, ...
+    (ub(6) - lb(6)) / 4, ...
+    (ub(7) - lb(7)) / 4, ...
+    1, ...
+    0.5, ...
+    (ub(10) - lb(10)) / 4, ...
+    (ub(11) - lb(11)) / 4, ...
+    (ub(12) - lb(12)) / 4, ...
+    (ub(13) - lb(13)) / 4, ...
+    0.1, ...
+    0.1], ...
+    abs(mu - lb), abs(mu - ub));
+intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
+
 % Conditionally load a saved state or initialize optimization options
-options = configureOptions(params);
+options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options);
+[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub);
 
 % Save results and plot the Pareto front
 saveOptimizationResults(solution, fval, exitFlag, output);
@@ -53,12 +95,16 @@ for i = 1:length(fnames)
         case {'UseParallel', 'Continue'}
             results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
         otherwise
-            results.(fnames{i}) = str2double(parsedResults.(fnames{i}));
+            value = str2double(parsedResults.(fnames{i}));
+            if isnan(value)
+                error('Invalid value for parameter %s: %s', fnames{i}, parsedResults.(fnames{i}));
+            end
+            results.(fnames{i}) = value;
     end
 end
 end
 
-function options = configureOptions(params)
+function options = configureOptions(params, mu, std, lb, ub, intIndices)
 % Configure optimization options, optionally continuing from a saved state
 stateFile = 'output/gamultiobj_state.mat';
 if params.Continue && isfile(stateFile)
@@ -67,6 +113,31 @@ if params.Continue && isfile(stateFile)
     options.MaxGenerations = params.MaxGenerations - state.Generation;
     fprintf('Continuing from saved state...\n');
 else
+    % Generate initial population using mu and std
+    populationSize = params.PopulationSize;
+    numVariables = length(mu);
+    initialPopulation = zeros(populationSize, numVariables);
+    
+    for i = 1:populationSize
+        valid = false;
+        while ~valid
+            individual = normrnd(mu, std);
+            % Ensure the values are within bounds
+            if all(individual >= lb) && all(individual <= ub)
+                % Ensure integer constraints
+                individual(intIndices) = round(individual(intIndices));
+                % Check constraints
+                if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
+                        individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
+                        individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
+                        individual(14) <= individual(15)        % GAMMA1_PARAM <= GAMMA2_PARAM
+                    valid = true;
+                end
+            end
+        end
+        initialPopulation(i, :) = individual;
+    end
+    
     options = optimoptions('gamultiobj', ...
         'PopulationSize', params.PopulationSize, ...
         'MaxGenerations', params.MaxGenerations, ...
@@ -75,30 +146,36 @@ else
         'UseParallel', params.UseParallel, ...
         'ParetoFraction', params.ParetoFraction, ...
         'Display', params.Display, ...
+        'InitialPopulationMatrix', initialPopulation, ...
         'OutputFcn', @saveCheckpoint);
 end
 end
 
-function [x, fval, exitFlag, output] = performOptimization(params, options)
-% Perform the optimization using specified parameters and options
-groundTruthData = loadGroundTruth(params.GroundTruthPath);
-[height, width] = getImageDimensions(params.InputPath);
-frameArea = height * width;
-frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
-frameDiagonal = sqrt(width^2 + height^2);
-maxDimension = max(height, width);
+function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub)
+% Load and process ground truth data
+try
+    groundTruthFile = load(params.GroundTruthPath);
+catch
+    error('Failed to load ground truth file: %s', params.GroundTruthPath);
+end
+numEntries = size(groundTruthFile, 1);
+template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+groundTruthData = repmat(template, numEntries, 1);
+for i = 1:numEntries
+    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+    groundTruthData(i).id = groundTruthFile(i, 2);
+    groundTruthData(i).x = groundTruthFile(i, 3);
+    groundTruthData(i).y = groundTruthFile(i, 4);
+    groundTruthData(i).width = groundTruthFile(i, 5);
+    groundTruthData(i).height = groundTruthFile(i, 6);
+    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+end
 
 FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
 
-% Define bounds and integer constraints for optimization variables
-numberOfVariables = 15;
-lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
-ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    frameDiagonal, frameCount - 1, Inf, 1, 1];
-intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
-
 % Perform multi-objective optimization
+numberOfVariables = length(lb);
 [x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
@@ -115,38 +192,6 @@ intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
     end
 end
 
-function groundTruthData = loadGroundTruth(groundTruthPath)
-% Load and process ground truth data
-try
-    groundTruthFile = load(groundTruthPath);
-catch
-    error('Failed to load ground truth file: %s', groundTruthPath);
-end
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-end
-end
-
-function [height, width] = getImageDimensions(inputPath)
-% Get image dimensions from the first image in the input path
-firstImageFile = dir(fullfile(inputPath, '*.jpg'));
-if isempty(firstImageFile)
-    error('No images found in the input path: %s', inputPath);
-end
-firstImage = imread(fullfile(inputPath, firstImageFile(1).name));
-[height, width, ~] = size(firstImage);
-end
-
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
@@ -155,7 +200,6 @@ connectivityOptions = [4, 8];
 connectivityValue = connectivityOptions(optParams(2));
 bitwiseOrOptions = [false, true];
 bitwiseOrValue = bitwiseOrOptions(optParams(9));
-
 
 % Initialize detection and set default values for counts
 detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...

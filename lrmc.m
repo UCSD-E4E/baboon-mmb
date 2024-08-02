@@ -21,8 +21,8 @@ parfor frameIdx = 1:numFrames
         imArray(:, :, j) = grayFrames.Value{idx};
     end
     
-    % If there are not enough frames, continue to the next iteration
-    if size(imArray, 3) < 2
+    % Check if imArray is empty or has fewer than 2 frames
+    if isempty(imArray) || size(imArray, 3) < 2
         output{frameIdx} = zeros(size(imArray(:, :, 1)), 'uint8');
         continue;
     end
