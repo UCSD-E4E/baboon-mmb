@@ -24,11 +24,6 @@ se = strel('disk', double(max(1, floor(KERNEL/2))));
 % Precompute grayscale frames to double format for all frames
 grayFramesDbl = cellfun(@double, grayFrames, 'UniformOutput', false);
 
-% Check if grayFrames is empty or has invalid dimensions
-if isempty(grayFrames) || ~iscell(grayFrames) || any(cellfun(@size, grayFrames, 1) ~= [height, width])
-    error('Invalid input: grayFrames must be a non-empty cell array of grayscale images with the same dimensions');
-end
-
 for t = 2:(numFrames - 1)
     I_prev = grayFramesDbl{t-1};
     I_curr = grayFramesDbl{t};
