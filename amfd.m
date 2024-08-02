@@ -1,7 +1,19 @@
 function output = amfd(K, CONNECTIVITY, AREA_MIN, AREA_MAX, ASPECT_RATIO_MIN, ASPECT_RATIO_MAX, KERNEL, grayFrames)
 % fprintf('Processing frames using AMFD...\n');
+
+% Validate input
+if isempty(grayFrames) || ~iscell(grayFrames)
+    error('Invalid input: grayFrames must be a non-empty cell array of grayscale images');
+end
+
 numFrames = numel(grayFrames);
 [height, width] = size(grayFrames{1});
+
+% Ensure all frames are the same size
+if any(cellfun(@(x) ~isequal(size(x), [height, width]), grayFrames))
+    error('Invalid input: All frames must have the same dimensions.');
+end
+
 output = cell(1, numFrames);
 output{1} = zeros(height, width, 'uint8');  % Handle edge frames
 output{numFrames} = zeros(height, width, 'uint8');
