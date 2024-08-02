@@ -53,7 +53,7 @@ intIndices = [1, 2, 3, 4, 8, 9, 10, 11, 12, 13];
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub);
+[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices);
 
 % Save results and plot the Pareto front
 saveOptimizationResults(solution, fval, exitFlag, output);
@@ -152,7 +152,7 @@ else
 end
 end
 
-function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub)
+function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
 % Load and process ground truth data
 try
     groundTruthFile = load(params.GroundTruthPath);
