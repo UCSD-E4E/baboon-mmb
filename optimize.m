@@ -221,7 +221,6 @@ end
 
 % Analyze each unique frame
 uniqueFrames = unique([groundTruthData.frameNumber, [detectedData.frameNumber]]);
-largeCost = 1e6;
 
 for frame = uniqueFrames
     gtObjects = groundTruthData([groundTruthData.frameNumber] == frame);
@@ -251,23 +250,40 @@ for frame = uniqueFrames
             FP = FP + sum(~matchedDetections);
             FN = FN + sum(~matchedGroundTruth);
         case 2
-            costMatrix = largeCost * ones(numGt, numDet);
+            costMatrix = zeros(numGt, numDet);
             
             for i = 1:numGt
+                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
+                bbGt = [bbGt(1), bbGt(2), bbGt(1)+bbGt(3), bbGt(2)+bbGt(4)]; % Convert to [x1,y1,x2,y2] format
+                
                 for j = 1:numDet
-                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
                     bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        costMatrix(i, j) = 1 - overlapRatio;
-                    end
+                    bbDet = [bbDet(1), bbDet(2), bbDet(1)+bbDet(3), bbDet(2)+bbDet(4)]; % Convert to [x1,y1,x2,y2] format
+                    
+                    % Calculate IoU
+                    xx1 = max(bbGt(1), bbDet(1));
+                    yy1 = max(bbGt(2), bbDet(2));
+                    xx2 = min(bbGt(3), bbDet(3));
+                    yy2 = min(bbGt(4), bbDet(4));
+                    
+                    w = max(0, xx2 - xx1);
+                    h = max(0, yy2 - yy1);
+                    
+                    wh = w * h;
+                    iou = wh / ((bbGt(3)-bbGt(1))*(bbGt(4)-bbGt(2)) + (bbDet(3)-bbDet(1))*(bbDet(4)-bbDet(2)) - wh + 1e-7);
+                    
+                    costMatrix(i, j) = -iou; 
                 end
             end
             
-            [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
-            TP = TP + size(assignments, 1);
-            FP = FP + length(unassignedCols);
-            FN = FN + length(unassignedRows);
+            costOfNonAssignment = 0; 
+            [assignments, ~, ~] = assignDetectionsToTracks(costMatrix, costOfNonAssignment);
+            
+            validAssignments = assignments(costMatrix(sub2ind(size(costMatrix), assignments(:,1), assignments(:,2))) < 0);
+            
+            TP = size(validAssignments, 1);
+            FP = numDet - TP;
+            FN = numGt - TP;
         case 3
             matchedGt = false(1, numGt);
             for j = 1:numDet
