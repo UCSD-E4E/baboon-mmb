@@ -1,132 +1,149 @@
-function optimize(varargin)
+function optimize()
 % Optimize function entry point. Parses inputs, configures options,
 % performs optimization, and handles results.
 
-% Set up the input parser and define parameter validations
-parser = setupInputParser();
-parse(parser, varargin{:});
-params = convertParams(parser.Results);
+% Read configuration from file
+config = readConfigFile('optimize_config.txt');
 
 % Get image dimensions from the first image in the input path
-firstImageFile = dir(fullfile(params.InputPath, '*.jpg'));
+firstImageFile = dir(fullfile(config.InputPath, '*.jpg'));
 if isempty(firstImageFile)
-    error('No images found in the input path: %s', params.InputPath);
+    error('No images found in the input path: %s', config.InputPath);
 end
 
 try
-    firstImage = imread(fullfile(params.InputPath, firstImageFile(1).name));
+    firstImage = imread(fullfile(config.InputPath, firstImageFile(1).name));
 catch
-    error('Failed to read the first image in the input path: %s', fullfile(params.InputPath, firstImageFile(1).name));
+    error('Failed to read the first image in the input path: %s', fullfile(config.InputPath, firstImageFile(1).name));
 end
 
 [height, width, ~] = size(firstImage);
 frameArea = height * width;
-frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
+frameCount = numel(dir(fullfile(config.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
-lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
-ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    frameDiagonal, frameCount - 1, Inf, 1, 1];
-mu = [4, 2, 5, 80, 1, 6, 4, 3, 1, 5, 7, 3, 10, 0.3, 0.8];
-std = min(min([
-    1, ...
-    0.5, ...
-    (ub(3) - lb(3)) / 4, ...
-    (ub(4) - lb(4)) / 4, ...
-    (ub(5) - lb(5)) / 4, ...
-    (ub(6) - lb(6)) / 4, ...
-    (ub(7) - lb(7)) / 4, ...
-    1, ...
-    0.5, ...
-    (ub(10) - lb(10)) / 4, ...
-    (ub(11) - lb(11)) / 4, ...
-    (ub(12) - lb(12)) / 4, ...
-    (ub(13) - lb(13)) / 4, ...
-    0.1, ...
-    0.1], ...
-    abs(mu - lb)), abs(mu - ub));
-intIndices = [2, 3, 4, 8, 9, 10, 11, 12, 13];
+% Adjust upper bounds based on frame properties
+config.ub(3) = min(config.ub(3), frameArea);
+config.ub(4) = min(config.ub(4), frameArea);
+config.ub(5) = min(config.ub(5), maxDimension);
+config.ub(6) = min(config.ub(6), maxDimension);
+config.ub(7) = min(config.ub(7), frameCount / config.FrameRate);
+config.ub(8) = min(config.ub(8), maxDimension);
+config.ub(10) = min(config.ub(10), frameCount - 1);
+config.ub(11) = min(config.ub(11), frameDiagonal);
+config.ub(12) = min(config.ub(12), frameCount - 1);
 
 % Conditionally load a saved state or initialize optimization options
-options = configureOptions(params, mu, std, lb, ub, intIndices);
+options = configureOptions(config);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices);
+[solution, fval, exitFlag, output] = performOptimization(config, options);
 
 % Save results and plot the Pareto front
 saveOptimizationResults(solution, fval, exitFlag, output);
 plotParetoFront(fval);
 end
 
-function parser = setupInputParser()
-% Setup input parser with parameter validations
-parser = inputParser;
-
-validPath = @(x) ischar(x) && isfolder(x);
-validFile = @(x) ischar(x) && isfile(x);
-validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
-validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
-validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
-
-addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
-addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(parser, 'FrameRate', '10', validNumericStr);
-addParameter(parser, 'PopulationSize', '1000', validNumericStr);
-addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
-addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
-addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(parser, 'UseParallel', 'true', validBooleanStr);
-addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
-addParameter(parser, 'Display', 'iter', @ischar);
-addParameter(parser, 'Continue', 'false', validBooleanStr);
-addParameter(parser, 'OptimizationType', '2', validOptType);
+function config = readConfigFile(filename)
+% Read configuration from file
+config = struct();
+fid = fopen(filename, 'r');
+if fid == -1
+    error('Cannot open configuration file: %s', filename);
 end
 
-function results = convertParams(parsedResults)
-% Convert parameters to their appropriate data types
-fnames = fieldnames(parsedResults);
-results = struct();
-for i = 1:length(fnames)
-    switch fnames{i}
-        case {'InputPath', 'GroundTruthPath', 'Display'}
-            results.(fnames{i}) = parsedResults.(fnames{i});
-        case {'UseParallel', 'Continue'}
-            results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
-        otherwise
-            value = str2double(parsedResults.(fnames{i}));
-            if isnan(value)
-                error('Invalid value for parameter %s: %s', fnames{i}, parsedResults.(fnames{i}));
+while ~feof(fid)
+    line = fgetl(fid);
+    [key, value] = strtok(line, '=');
+    key = strtrim(key);
+    value = strtrim(value(2:end));
+    
+    switch key
+        case {'lb', 'ub', 'mu', 'std', 'intIndices'}
+            % Convert string to numeric array, handling Inf and decimals
+            numericArray = str2num(value);
+            if isempty(numericArray)
+                error('Invalid numeric array for %s: %s', key, value);
             end
-            results.(fnames{i}) = value;
+            config.(key) = numericArray;
+        case {'InputPath', 'GroundTruthPath', 'Display'}
+            config.(key) = value;
+        case {'UseParallel', 'Continue'}
+            config.(key) = strcmpi(value, 'true') || str2double(value) == 1;
+        otherwise
+            % For all other numeric parameters
+            numValue = str2double(value);
+            if isnan(numValue)
+                error('Invalid numeric value for %s: %s', key, value);
+            end
+            config.(key) = numValue;
     end
 end
+
+fclose(fid);
+
+% Check if all required fields are present
+requiredFields = {'lb', 'ub', 'mu', 'std', 'intIndices', 'InputPath', 'GroundTruthPath', ...
+    'FrameRate', 'PopulationSize', 'MaxGenerations', 'FunctionTolerance', ...
+    'MaxStallGenerations', 'UseParallel', 'ParetoFraction', 'Display', ...
+    'Continue', 'OptimizationType'};
+for i = 1:length(requiredFields)
+    if ~isfield(config, requiredFields{i})
+        error('Missing required configuration: %s', requiredFields{i});
+    end
 end
 
-function options = configureOptions(params, mu, std, lb, ub, intIndices)
+% Validate configuration
+validateConfig(config);
+end
+
+function validateConfig(config)
+% Validate the configuration
+if numel(config.lb) ~= numel(config.ub) || numel(config.lb) ~= numel(config.mu) || numel(config.lb) ~= numel(config.std)
+    error('Inconsistent array lengths for lb, ub, mu, and std');
+end
+
+if any(config.lb > config.ub)
+    error('Lower bounds must be less than or equal to upper bounds');
+end
+
+if any(config.mu < config.lb) || any(config.mu > config.ub)
+    error('Initial values (mu) must be within bounds');
+end
+
+if any(config.std <= 0)
+    error('Standard deviations must be positive');
+end
+
+if any(config.intIndices < 1) || any(config.intIndices > numel(config.lb))
+    error('Invalid intIndices: must be within the range of parameter indices');
+end
+end
+
+function options = configureOptions(config)
 % Configure optimization options, optionally continuing from a saved state
 stateFile = 'output/gamultiobj_state.mat';
-if params.Continue && isfile(stateFile)
+if config.Continue && isfile(stateFile)
     load(stateFile, 'state', 'options');
     options.InitialPopulationMatrix = state.Population;
-    options.MaxGenerations = params.MaxGenerations - state.Generation;
+    options.MaxGenerations = config.MaxGenerations - state.Generation;
     fprintf('Continuing from saved state...\n');
 else
     % Generate initial population using mu and std
-    populationSize = params.PopulationSize;
-    numVariables = length(mu);
+    populationSize = config.PopulationSize;
+    numVariables = length(config.mu);
     initialPopulation = zeros(populationSize, numVariables);
     
     for i = 1:populationSize
         valid = false;
         while ~valid
             % Generate normally distributed random numbers
-            individual = mu + std .* randn(1, numVariables);
+            individual = config.mu + config.std .* randn(1, numVariables);
             % Ensure the values are within bounds
-            if all(individual >= lb) && all(individual <= ub)
+            if all(individual >= config.lb) && all(individual <= config.ub)
                 % Ensure integer constraints
-                individual(intIndices) = round(individual(intIndices));
+                individual(config.intIndices) = round(individual(config.intIndices));
                 % Check constraints
                 if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
                         individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
@@ -140,24 +157,24 @@ else
     end
     
     options = optimoptions('gamultiobj', ...
-        'PopulationSize', params.PopulationSize, ...
-        'MaxGenerations', params.MaxGenerations, ...
-        'FunctionTolerance', params.FunctionTolerance, ...
-        'MaxStallGenerations', params.MaxStallGenerations, ...
-        'UseParallel', params.UseParallel, ...
-        'ParetoFraction', params.ParetoFraction, ...
-        'Display', params.Display, ...
+        'PopulationSize', config.PopulationSize, ...
+        'MaxGenerations', config.MaxGenerations, ...
+        'FunctionTolerance', config.FunctionTolerance, ...
+        'MaxStallGenerations', config.MaxStallGenerations, ...
+        'UseParallel', config.UseParallel, ...
+        'ParetoFraction', config.ParetoFraction, ...
+        'Display', config.Display, ...
         'InitialPopulationMatrix', initialPopulation, ...
         'OutputFcn', @saveCheckpoint);
 end
 end
 
-function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
+function [x, fval, exitFlag, output] = performOptimization(config, options)
 % Load and process ground truth data
 try
-    groundTruthFile = load(params.GroundTruthPath);
+    groundTruthFile = load(config.GroundTruthPath);
 catch
-    error('Failed to load ground truth file: %s', params.GroundTruthPath);
+    error('Failed to load ground truth file: %s', config.GroundTruthPath);
 end
 numEntries = size(groundTruthFile, 1);
 template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
@@ -173,11 +190,11 @@ for i = 1:numEntries
     groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
 end
 
-FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
+FitnessFunction = @(optParams) evaluateParams(optParams, config, groundTruthData);
 
 % Perform multi-objective optimization
-numberOfVariables = length(lb);
-[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+numberOfVariables = length(config.lb);
+[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], config.lb, config.ub, @constraintFunction, config.intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
         % Define nonlinear inequality and equality constraints
@@ -193,7 +210,7 @@ numberOfVariables = length(lb);
     end
 end
 
-function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
+function [precision, recall] = evaluateParams(optParams, config, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
 % Map the auxiliary variables
@@ -210,7 +227,7 @@ detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, 
     'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
     'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
     'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+    'FRAME_RATE', config.FrameRate, 'IMAGE_SEQUENCE', config.InputPath, 'DEBUG', false);
 
 TP = 0; FP = 0; FN = 0;
 
@@ -228,7 +245,7 @@ for frame = uniqueFrames
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
     
-    switch userParams.OptimizationType
+    switch config.OptimizationType
         case 1
             matchedDetections = false(numDet, 1);
             matchedGroundTruth = false(numGt, 1);
