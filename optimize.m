@@ -2,10 +2,11 @@ function optimize(varargin)
 % Optimize function entry point. Parses inputs, configures options,
 % performs optimization, and handles results.
 
-% Set up the input parser and define parameter validations
-parser = setupInputParser();
-parse(parser, varargin{:});
-params = convertParams(parser.Results);
+% Read configuration file
+config = readConfigFile('config.json');
+
+% Convert user-defined parameters
+params = convertUserParams(config);
 
 % Get image dimensions from the first image in the input path
 firstImageFile = dir(fullfile(params.InputPath, '*.jpg'));
@@ -25,131 +26,108 @@ frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
-lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
-ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    frameDiagonal, frameCount - 1, Inf, 1, 1];
-mu = [4, 2, 5, 80, 1, 6, 4, 3, 1, 5, 7, 3, 10, 0.3, 0.8];
-std = min(min([
-    1, ...
-    0.5, ...
-    (ub(3) - lb(3)) / 4, ...
-    (ub(4) - lb(4)) / 4, ...
-    (ub(5) - lb(5)) / 4, ...
-    (ub(6) - lb(6)) / 4, ...
-    (ub(7) - lb(7)) / 4, ...
-    1, ...
-    0.5, ...
-    (ub(10) - lb(10)) / 4, ...
-    (ub(11) - lb(11)) / 4, ...
-    (ub(12) - lb(12)) / 4, ...
-    (ub(13) - lb(13)) / 4, ...
-    0.1, ...
-    0.1], ...
-    abs(mu - lb)), abs(mu - ub));
-intIndices = [2, 3, 4, 8, 9, 10, 11, 12, 13];
+% Use configuration values
+lb = config.lb;
+ub = config.ub;
+mu = config.mu;
+std = config.std;
+intIndices = config.intIndices;
 
-% Conditionally load a saved state or initialize optimization options
+% Adjust upper bounds based on image properties
+ub(3) = min(ub(3), frameArea);
+ub(4) = min(ub(4), frameArea);
+ub(5) = min(ub(5), maxDimension);
+ub(6) = min(ub(6), maxDimension);
+ub(7) = min(ub(7), frameCount / params.FrameRate);
+ub(8) = min(ub(8), maxDimension);
+ub(10) = min(ub(10), frameCount - 1);
+ub(11) = min(ub(11), frameDiagonal);
+ub(12) = min(ub(12), frameCount - 1);
+
+% Configure optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices);
+[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices);
 
-% Save results and plot the Pareto front
-saveOptimizationResults(solution, fval, exitFlag, output);
-plotParetoFront(fval);
+% Save the solution to a file
+save('output/solution.mat', 'solution');
 end
 
-function parser = setupInputParser()
-% Setup input parser with parameter validations
-parser = inputParser;
+function config = readConfigFile(filename)
+% Read and parse the JSON configuration file
+fid = fopen(filename, 'r');
+if fid == -1
+    error('Cannot open configuration file: %s', filename);
+end
+raw = fread(fid, inf);
+str = char(raw');
+fclose(fid);
+config = jsondecode(str);
 
-validPath = @(x) ischar(x) && isfolder(x);
-validFile = @(x) ischar(x) && isfile(x);
-validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
-validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
-validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
-
-addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
-addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(parser, 'FrameRate', '10', validNumericStr);
-addParameter(parser, 'PopulationSize', '1000', validNumericStr);
-addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
-addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
-addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(parser, 'UseParallel', 'true', validBooleanStr);
-addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
-addParameter(parser, 'Display', 'iter', @ischar);
-addParameter(parser, 'Continue', 'false', validBooleanStr);
-addParameter(parser, 'OptimizationType', '2', validOptType);
+% Replace 'Inf' strings with actual Inf values
+fields = {'lb', 'ub', 'mu', 'std'};
+for i = 1:length(fields)
+    field = fields{i};
+    config.(field) = cellfun(@(x) str2double(x), config.(field));
+    config.(field)(isinf(config.(field)) & config.(field) < 0) = -Inf;
+    config.(field)(isinf(config.(field)) & config.(field) > 0) = Inf;
+end
 end
 
-function results = convertParams(parsedResults)
-% Convert parameters to their appropriate data types
-fnames = fieldnames(parsedResults);
-results = struct();
-for i = 1:length(fnames)
-    switch fnames{i}
-        case {'InputPath', 'GroundTruthPath', 'Display'}
-            results.(fnames{i}) = parsedResults.(fnames{i});
-        case {'UseParallel', 'Continue'}
-            results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
-        otherwise
-            value = str2double(parsedResults.(fnames{i}));
-            if isnan(value)
-                error('Invalid value for parameter %s: %s', fnames{i}, parsedResults.(fnames{i}));
-            end
-            results.(fnames{i}) = value;
-    end
-end
+function params = convertUserParams(config)
+% Convert user-defined parameters to appropriate data types
+params = struct();
+params.InputPath = config.InputPath;
+params.GroundTruthPath = config.GroundTruthPath;
+params.FrameRate = str2double(config.FrameRate);
+params.PopulationSize = str2double(config.PopulationSize);
+params.MaxGenerations = str2double(config.MaxGenerations);
+params.FunctionTolerance = str2double(config.FunctionTolerance);
+params.MaxStallGenerations = str2double(config.MaxStallGenerations);
+params.UseParallel = strcmpi(config.UseParallel, 'true');
+params.ParetoFraction = str2double(config.ParetoFraction);
+params.Display = config.Display;
 end
 
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
-% Configure optimization options, optionally continuing from a saved state
-stateFile = 'output/gamultiobj_state.mat';
-if params.Continue && isfile(stateFile)
-    load(stateFile, 'state', 'options');
-    options.InitialPopulationMatrix = state.Population;
-    options.MaxGenerations = params.MaxGenerations - state.Generation;
-    fprintf('Continuing from saved state...\n');
-else
-    % Generate initial population using mu and std
-    populationSize = params.PopulationSize;
-    numVariables = length(mu);
-    initialPopulation = zeros(populationSize, numVariables);
-    
-    for i = 1:populationSize
-        valid = false;
-        while ~valid
-            % Generate normally distributed random numbers
-            individual = mu + std .* randn(1, numVariables);
-            % Ensure the values are within bounds
-            if all(individual >= lb) && all(individual <= ub)
-                % Ensure integer constraints
-                individual(intIndices) = round(individual(intIndices));
-                % Check constraints
-                if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
-                        individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
-                        individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
-                        individual(14) <= individual(15)        % GAMMA1_PARAM <= GAMMA2_PARAM
-                    valid = true;
-                end
+% Configure optimization options
+
+% Generate initial population using mu and std
+populationSize = params.PopulationSize;
+numVariables = length(mu);
+initialPopulation = zeros(populationSize, numVariables);
+
+for i = 1:populationSize
+    valid = false;
+    while ~valid
+        % Generate normally distributed random numbers
+        individual = (mu + std .* randn(numVariables, 1))';
+        % Ensure the values are within bounds
+        if all(individual >= lb' & individual <= ub')
+            % Ensure integer constraints
+            individual(intIndices) = round(individual(intIndices));
+            % Check constraints
+            if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
+                    individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
+                    individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
+                    individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
+                valid = true;
             end
         end
-        initialPopulation(i, :) = individual;
     end
-    
-    options = optimoptions('gamultiobj', ...
-        'PopulationSize', params.PopulationSize, ...
-        'MaxGenerations', params.MaxGenerations, ...
-        'FunctionTolerance', params.FunctionTolerance, ...
-        'MaxStallGenerations', params.MaxStallGenerations, ...
-        'UseParallel', params.UseParallel, ...
-        'ParetoFraction', params.ParetoFraction, ...
-        'Display', params.Display, ...
-        'InitialPopulationMatrix', initialPopulation, ...
-        'OutputFcn', @saveCheckpoint);
+    initialPopulation(i, :) = individual;
 end
+
+options = optimoptions('gamultiobj', ...
+    'PopulationSize', params.PopulationSize, ...
+    'MaxGenerations', params.MaxGenerations, ...
+    'FunctionTolerance', params.FunctionTolerance, ...
+    'MaxStallGenerations', params.MaxStallGenerations, ...
+    'UseParallel', params.UseParallel, ...
+    'ParetoFraction', params.ParetoFraction, ...
+    'Display', params.Display, ...
+    'InitialPopulationMatrix', initialPopulation);
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
@@ -196,21 +174,37 @@ end
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
-% Map the auxiliary variables
-connectivityOptions = [4, 8];
-connectivityValue = connectivityOptions(optParams(2));
-bitwiseOrOptions = [false, true];
-bitwiseOrValue = bitwiseOrOptions(optParams(9));
+% Generate a unique filename based on the parameters
+paramStr = sprintf('%.4f_', optParams);
+paramHash = generateHash(paramStr); % Use a hash function to create a unique identifier
+resultsFile = fullfile('output', [paramHash, '_results.mat']);
+scoreFile = fullfile('output', [paramHash, '_score.txt']);
 
-% Initialize detection and set default values for counts
-detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
-    'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
-    'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
-    'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
-    'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
-    'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
-    'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+if isfile(resultsFile)
+    % Load existing results
+    load(resultsFile, 'detectedData');
+    fprintf('Loaded existing results for parameters: %s\n', paramStr);
+else
+    % Map the auxiliary variables
+    connectivityOptions = [4, 8];
+    connectivityValue = connectivityOptions(optParams(2));
+    bitwiseOrOptions = [false, true];
+    bitwiseOrValue = bitwiseOrOptions(optParams(9));
+    
+    % Initialize detection and set default values for counts
+    detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
+        'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
+        'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
+        'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
+        'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
+        'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
+        'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
+        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+    
+    % Save the results for future use
+    save(resultsFile, 'detectedData');
+    fprintf('Saved results for parameters: %s\n', paramStr);
+end
 
 TP = 0; FP = 0; FN = 0;
 
@@ -221,7 +215,6 @@ end
 
 % Analyze each unique frame
 uniqueFrames = unique([groundTruthData.frameNumber, [detectedData.frameNumber]]);
-largeCost = 1e6;
 
 for frame = uniqueFrames
     gtObjects = groundTruthData([groundTruthData.frameNumber] == frame);
@@ -229,93 +222,57 @@ for frame = uniqueFrames
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
     
-    switch userParams.OptimizationType
-        case 1
-            matchedDetections = false(numDet, 1);
-            matchedGroundTruth = false(numGt, 1);
+    % Initialize cost matrix
+    cost_matrix = zeros(numGt, numDet);
+    
+    % Calculate IoU for each detection and ground truth pair
+    for i = 1:numDet
+        for j = 1:numGt
+            detBox = [detectedObjects(i).x, detectedObjects(i).y, detectedObjects(i).width, detectedObjects(i).height];
+            gtBox = [gtObjects(j).x, gtObjects(j).y, gtObjects(j).width, gtObjects(j).height];
             
-            for i = 1:numGt
-                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                
-                for j = 1:numDet
-                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        matchedDetections(j) = true;
-                        matchedGroundTruth(i) = true;
-                    end
-                end
+            xD = max([detBox(1), gtBox(1)]);
+            yD = max([detBox(2), gtBox(2)]);
+            xG = min([detBox(1) + detBox(3), gtBox(1) + gtBox(3)]);
+            yG = min([detBox(2) + detBox(4), gtBox(2) + gtBox(4)]);
+            
+            % Calculate intersection area
+            interArea = max(0, xG - xD) * max(0, yG - yD);
+            
+            % Calculate areas of each box
+            boxAArea = detBox(3) * detBox(4);
+            boxBArea = gtBox(3) * gtBox(4);
+            
+            % Compute union area
+            unionArea = boxAArea + boxBArea - interArea;
+            
+            % Compute IoU
+            if unionArea > 0
+                iou = interArea / unionArea;
+            else
+                iou = 0;
             end
-            
-            TP = TP + sum(matchedGroundTruth);
-            FP = FP + sum(~matchedDetections);
-            FN = FN + sum(~matchedGroundTruth);
-        case 2
-            costMatrix = largeCost * ones(numGt, numDet);
-            
-            for i = 1:numGt
-                for j = 1:numDet
-                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        costMatrix(i, j) = 1 - overlapRatio;
-                    end
-                end
-            end
-            
-            [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
-            TP = TP + size(assignments, 1);
-            FP = FP + length(unassignedCols);
-            FN = FN + length(unassignedRows);
-        case 3
-            matchedGt = false(1, numGt);
-            for j = 1:numDet
-                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                maxOverlap = 0;
-                bestMatchedIdx = 0;
-                for i = 1:numGt
-                    if ~matchedGt(i)
-                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                        overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                        if overlapRatio > maxOverlap
-                            maxOverlap = overlapRatio;
-                            bestMatchedIdx = i;
-                        end
-                        
-                    end
-                end
-                if maxOverlap > 0
-                    TP = TP + 1;
-                    matchedGt(bestMatchedIdx) = true;
-                else
-                    FP = FP + 1;
-                end
-            end
-            
-            FN = FN + sum(~matchedGt);
-        case 4
-            matchedGt = false(1, numGt);
-            for j = 1:numDet
-                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                perfectMatch = false;
-                for i = 1:numGt
-                    if ~matchedGt(i)
-                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                        if isequal(bbGt, bbDet)
-                            TP = TP + 1;
-                            matchedGt(i) = true;
-                            perfectMatch = true;
-                            break;
-                        end
-                    end
-                end
-                if ~perfectMatch
-                    FP = FP + 1;
-                end
-            end
-            FN = FN + sum(~matchedGt);
+            cost_matrix(i, j) = iou;
+        end
     end
+    
+    iou_threshold = 0.0;
+    
+    assignments = matchpairs(-cost_matrix, iou_threshold);
+    
+    % Count true positives
+    for k = 1:size(assignments, 1)
+        if cost_matrix(assignments(k, 1), assignments(k, 2)) > iou_threshold
+            TP = TP + 1;
+        else
+            FP = FP + 1;
+            FN = FN + 1;
+        end
+    end
+    
+    % Count false positive and false negative
+    FP = FP + (numDet - size(assignments, 1));
+    FN = FN + (numGt - size(assignments, 1));
 end
 
 % Calculate precision, recall, and F1-score
@@ -343,42 +300,18 @@ outputDir = 'output/';
 if ~isfolder(outputDir)
     mkdir(outputDir);
 end
-uniqueID = tempname(outputDir); % Generates a unique file name
-[~, uniqueFileName, ~] = fileparts(uniqueID); % Extracts the unique part of the file name
-resultsFile = fullfile(outputDir, [uniqueFileName, '.txt']); % Adds .txt extension
 paramStr = sprintf('%.4f ', optParams);
-fileID = fopen(resultsFile, 'a');
+fileID = fopen(scoreFile, 'a');
 if fileID == -1
-    error('Failed to open results file: %s', resultsFile);
+    error('Failed to open score file: %s', scoreFile);
 end
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
 
-function saveOptimizationResults(x, Fval, exitFlag, Output)
-outputDir = 'output/';
-if ~isfolder(outputDir)
-    mkdir(outputDir);
-end
-save(fullfile(outputDir, 'final_pareto_solutions.mat'), 'x', 'Fval', 'exitFlag', 'Output');
-end
-
-function plotParetoFront(Fval)
-outputDir = 'output/';
-if ~isfolder(outputDir)
-    mkdir(outputDir);
-end
-figure;
-plot(Fval(:,1), Fval(:,2), 'bo');
-xlabel('Precision');
-ylabel('Recall');
-title('Pareto Front');
-saveas(gcf, fullfile(outputDir, 'pareto_front.png'));
-end
-
-function [state, options, optchanged] = saveCheckpoint(options, state, flag)
-optchanged = false;
-if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
-    save('output/gamultiobj_state.mat', 'state', 'options');
-end
+function hash = generateHash(inputStr)
+% Generate an MD5 hash for the input string
+md = java.security.MessageDigest.getInstance('MD5');
+md.update(uint8(inputStr));
+hash = sprintf('%02x', typecast(md.digest(), 'uint8'));
 end

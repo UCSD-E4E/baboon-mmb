@@ -164,6 +164,7 @@ if ~any(cellfun(@(x) any(x(:)), combinedMasks))
     return;
 end
 
+
 objects = pf(args.PIPELINE_LENGTH, args.PIPELINE_SIZE, args.H, combinedMasks);
 
 if args.DEBUG
