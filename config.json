@@ -87,6 +87,5 @@
   "MaxStallGenerations": "1e6",
   "UseParallel": "false",
   "ParetoFraction": "0.7",
-  "Display": "iter",
-  "Continue": "false"
+  "Display": "iter"
 }
