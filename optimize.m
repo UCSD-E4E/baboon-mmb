@@ -165,7 +165,7 @@ numberOfVariables = length(lb);
             x(12) - x(10); % H <= PIPELINE_LENGTH
             x(14) - x(15); % GAMMA1_PARAM <= GAMMA2_PARAM
             ];
-
+        
         % Nonlinear equality constraints (ceq = 0)
         ceq = [];
     end
@@ -174,21 +174,37 @@ end
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
-% Map the auxiliary variables
-connectivityOptions = [4, 8];
-connectivityValue = connectivityOptions(optParams(2));
-bitwiseOrOptions = [false, true];
-bitwiseOrValue = bitwiseOrOptions(optParams(9));
+% Generate a unique filename based on the parameters
+paramStr = sprintf('%.4f_', optParams);
+paramHash = generateHash(paramStr); % Use a hash function to create a unique identifier
+resultsFile = fullfile('output', [paramHash, '_results.mat']);
+scoreFile = fullfile('output', [paramHash, '_score.txt']);
 
-% Initialize detection and set default values for counts
-detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
-    'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
-    'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
-    'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
-    'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
-    'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
-    'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+if isfile(resultsFile)
+    % Load existing results
+    load(resultsFile, 'detectedData');
+    fprintf('Loaded existing results for parameters: %s\n', paramStr);
+else
+    % Map the auxiliary variables
+    connectivityOptions = [4, 8];
+    connectivityValue = connectivityOptions(optParams(2));
+    bitwiseOrOptions = [false, true];
+    bitwiseOrValue = bitwiseOrOptions(optParams(9));
+    
+    % Initialize detection and set default values for counts
+    detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
+        'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
+        'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
+        'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
+        'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
+        'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
+        'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
+        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+    
+    % Save the results for future use
+    save(resultsFile, 'detectedData');
+    fprintf('Saved results for parameters: %s\n', paramStr);
+end
 
 TP = 0; FP = 0; FN = 0;
 
@@ -205,31 +221,31 @@ for frame = uniqueFrames
     detectedObjects = detectedData([detectedData.frameNumber] == frame);
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
-
+    
     % Initialize cost matrix
     cost_matrix = zeros(numGt, numDet);
-
-    % Calcuate IoU for each detection and ground truth pair
+    
+    % Calculate IoU for each detection and ground truth pair
     for i = 1:numDet
         for j = 1:numGt
             detBox = [detectedObjects(i).x, detectedObjects(i).y, detectedObjects(i).width, detectedObjects(i).height];
             gtBox = [gtObjects(j).x, gtObjects(j).y, gtObjects(j).width, gtObjects(j).height];
-
+            
             xD = max([detBox(1), gtBox(1)]);
             yD = max([detBox(2), gtBox(2)]);
             xG = min([detBox(1) + detBox(3), gtBox(1) + gtBox(3)]);
             yG = min([detBox(2) + detBox(4), gtBox(2) + gtBox(4)]);
-
+            
             % Calculate intersection area
             interArea = max(0, xG - xD) * max(0, yG - yD);
-
+            
             % Calculate areas of each box
             boxAArea = detBox(3) * detBox(4);
             boxBArea = gtBox(3) * gtBox(4);
-
+            
             % Compute union area
             unionArea = boxAArea + boxBArea - interArea;
-
+            
             % Compute IoU
             if unionArea > 0
                 iou = interArea / unionArea;
@@ -239,11 +255,11 @@ for frame = uniqueFrames
             cost_matrix(i, j) = iou;
         end
     end
-
+    
     iou_threshold = 0.0;
-
+    
     assignments = matchpairs(-cost_matrix, iou_threshold);
-
+    
     % Count true positives
     for k = 1:size(assignments, 1)
         if cost_matrix(assignments(k, 1), assignments(k, 2)) > iou_threshold
@@ -253,7 +269,7 @@ for frame = uniqueFrames
             FN = FN + 1;
         end
     end
-
+    
     % Count false positive and false negative
     FP = FP + (numDet - size(assignments, 1));
     FN = FN + (numGt - size(assignments, 1));
@@ -284,14 +300,18 @@ outputDir = 'output/';
 if ~isfolder(outputDir)
     mkdir(outputDir);
 end
-uniqueID = tempname(outputDir); % Generates a unique file name
-[~, uniqueFileName, ~] = fileparts(uniqueID); % Extracts the unique part of the file name
-resultsFile = fullfile(outputDir, [uniqueFileName, '.txt']); % Adds .txt extension
 paramStr = sprintf('%.4f ', optParams);
-fileID = fopen(resultsFile, 'a');
+fileID = fopen(scoreFile, 'a');
 if fileID == -1
-    error('Failed to open results file: %s', resultsFile);
+    error('Failed to open score file: %s', scoreFile);
 end
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
+end
+
+function hash = generateHash(inputStr)
+% Generate an MD5 hash for the input string
+md = java.security.MessageDigest.getInstance('MD5');
+md.update(uint8(inputStr));
+hash = sprintf('%02x', typecast(md.digest(), 'uint8'));
 end
