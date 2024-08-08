@@ -2,10 +2,11 @@ function optimize(varargin)
 % Optimize function entry point. Parses inputs, configures options,
 % performs optimization, and handles results.
 
-% Set up the input parser and define parameter validations
-parser = setupInputParser();
-parse(parser, varargin{:});
-params = convertParams(parser.Results);
+% Read configuration file
+config = readConfigFile('config.json');
+
+% Convert user-defined parameters
+params = convertUserParams(config);
 
 % Get image dimensions from the first image in the input path
 firstImageFile = dir(fullfile(params.InputPath, '*.jpg'));
@@ -25,29 +26,23 @@ frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
-lb = [0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0];
-ub = [Inf, 2, frameArea, frameArea, maxDimension, maxDimension, ...
-    frameCount / params.FrameRate, maxDimension, 2, frameCount - 1, ...
-    frameDiagonal, frameCount - 1, Inf, 1, 1];
-mu = [4, 2, 5, 80, 1, 6, 4, 3, 1, 5, 7, 3, 10, 0.3, 0.8];
-std = min(min([
-    1, ...
-    0.5, ...
-    (ub(3) - lb(3)) / 4, ...
-    (ub(4) - lb(4)) / 4, ...
-    (ub(5) - lb(5)) / 4, ...
-    (ub(6) - lb(6)) / 4, ...
-    (ub(7) - lb(7)) / 4, ...
-    1, ...
-    0.5, ...
-    (ub(10) - lb(10)) / 4, ...
-    (ub(11) - lb(11)) / 4, ...
-    (ub(12) - lb(12)) / 4, ...
-    (ub(13) - lb(13)) / 4, ...
-    0.1, ...
-    0.1], ...
-    abs(mu - lb)), abs(mu - ub));
-intIndices = [2, 3, 4, 8, 9, 10, 11, 12, 13];
+% Use configuration values
+lb = config.lb;
+ub = config.ub;
+mu = config.mu;
+std = config.std;
+intIndices = config.intIndices;
+
+% Adjust upper bounds based on image properties
+ub(3) = min(ub(3), frameArea);
+ub(4) = min(ub(4), frameArea);
+ub(5) = min(ub(5), maxDimension);
+ub(6) = min(ub(6), maxDimension);
+ub(7) = min(ub(7), frameCount / params.FrameRate);
+ub(8) = min(ub(8), maxDimension);
+ub(10) = min(ub(10), frameCount - 1);
+ub(11) = min(ub(11), frameDiagonal);
+ub(12) = min(ub(12), frameCount - 1);
 
 % Conditionally load a saved state or initialize optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
@@ -60,46 +55,41 @@ saveOptimizationResults(solution, fval, exitFlag, output);
 plotParetoFront(fval);
 end
 
-function parser = setupInputParser()
-% Setup input parser with parameter validations
-parser = inputParser;
+function config = readConfigFile(filename)
+% Read and parse the JSON configuration file
+fid = fopen(filename, 'r');
+if fid == -1
+    error('Cannot open configuration file: %s', filename);
+end
+raw = fread(fid, inf);
+str = char(raw');
+fclose(fid);
+config = jsondecode(str);
 
-validPath = @(x) ischar(x) && isfolder(x);
-validFile = @(x) ischar(x) && isfile(x);
-validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
-validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
-
-addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
-addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
-addParameter(parser, 'FrameRate', '10', validNumericStr);
-addParameter(parser, 'PopulationSize', '1000', validNumericStr);
-addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
-addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
-addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(parser, 'UseParallel', 'false', validBooleanStr);
-addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
-addParameter(parser, 'Display', 'iter', @ischar);
-addParameter(parser, 'Continue', 'false', validBooleanStr);
+% Replace 'Inf' strings with actual Inf values
+fields = {'lb', 'ub', 'mu', 'std'};
+for i = 1:length(fields)
+    field = fields{i};
+    config.(field) = cellfun(@(x) str2double(x), config.(field));
+    config.(field)(isinf(config.(field)) & config.(field) < 0) = -Inf;
+    config.(field)(isinf(config.(field)) & config.(field) > 0) = Inf;
+end
 end
 
-function results = convertParams(parsedResults)
-% Convert parameters to their appropriate data types
-fnames = fieldnames(parsedResults);
-results = struct();
-for i = 1:length(fnames)
-    switch fnames{i}
-        case {'InputPath', 'GroundTruthPath', 'Display'}
-            results.(fnames{i}) = parsedResults.(fnames{i});
-        case {'UseParallel', 'Continue'}
-            results.(fnames{i}) = strcmpi(parsedResults.(fnames{i}), 'true') || str2double(parsedResults.(fnames{i})) == 1;
-        otherwise
-            value = str2double(parsedResults.(fnames{i}));
-            if isnan(value)
-                error('Invalid value for parameter %s: %s', fnames{i}, parsedResults.(fnames{i}));
-            end
-            results.(fnames{i}) = value;
-    end
-end
+function params = convertUserParams(config)
+% Convert user-defined parameters to appropriate data types
+params = struct();
+params.InputPath = config.InputPath;
+params.GroundTruthPath = config.GroundTruthPath;
+params.FrameRate = str2double(config.FrameRate);
+params.PopulationSize = str2double(config.PopulationSize);
+params.MaxGenerations = str2double(config.MaxGenerations);
+params.FunctionTolerance = str2double(config.FunctionTolerance);
+params.MaxStallGenerations = str2double(config.MaxStallGenerations);
+params.UseParallel = strcmpi(config.UseParallel, 'true');
+params.ParetoFraction = str2double(config.ParetoFraction);
+params.Display = config.Display;
+params.Continue = strcmpi(config.Continue, 'true');
 end
 
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
