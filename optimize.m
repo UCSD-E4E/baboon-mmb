@@ -44,7 +44,7 @@ ub(10) = min(ub(10), frameCount - 1);
 ub(11) = min(ub(11), frameDiagonal);
 ub(12) = min(ub(12), frameCount - 1);
 
-% Conditionally load a saved state or initialize optimization options
+% Configure optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
@@ -89,55 +89,46 @@ params.MaxStallGenerations = str2double(config.MaxStallGenerations);
 params.UseParallel = strcmpi(config.UseParallel, 'true');
 params.ParetoFraction = str2double(config.ParetoFraction);
 params.Display = config.Display;
-params.Continue = strcmpi(config.Continue, 'true');
 end
 
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
-% Configure optimization options, optionally continuing from a saved state
-stateFile = 'output/gamultiobj_state.mat';
-if params.Continue && isfile(stateFile)
-    load(stateFile, 'state', 'options');
-    options.InitialPopulationMatrix = state.Population;
-    options.MaxGenerations = params.MaxGenerations - state.Generation;
-    fprintf('Continuing from saved state...\n');
-else
-    % Generate initial population using mu and std
-    populationSize = params.PopulationSize;
-    numVariables = length(mu);
-    initialPopulation = zeros(populationSize, numVariables);
+% Configure optimization options
 
-    for i = 1:populationSize
-        valid = false;
-        while ~valid
-            % Generate normally distributed random numbers
-            individual = (mu + std .* randn(numVariables, 1))';
-            % Ensure the values are within bounds
-            if all(individual >= lb' & individual <= ub')
-                % Ensure integer constraints
-                individual(intIndices) = round(individual(intIndices));
-                % Check constraints
-                if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
-                        individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
-                        individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
-                        individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
-                    valid = true;
-                end
+% Generate initial population using mu and std
+populationSize = params.PopulationSize;
+numVariables = length(mu);
+initialPopulation = zeros(populationSize, numVariables);
+
+for i = 1:populationSize
+    valid = false;
+    while ~valid
+        % Generate normally distributed random numbers
+        individual = (mu + std .* randn(numVariables, 1))';
+        % Ensure the values are within bounds
+        if all(individual >= lb' & individual <= ub')
+            % Ensure integer constraints
+            individual(intIndices) = round(individual(intIndices));
+            % Check constraints
+            if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
+                    individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
+                    individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
+                    individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
+                valid = true;
             end
         end
-        initialPopulation(i, :) = individual;
     end
-
-    options = optimoptions('gamultiobj', ...
-        'PopulationSize', params.PopulationSize, ...
-        'MaxGenerations', params.MaxGenerations, ...
-        'FunctionTolerance', params.FunctionTolerance, ...
-        'MaxStallGenerations', params.MaxStallGenerations, ...
-        'UseParallel', params.UseParallel, ...
-        'ParetoFraction', params.ParetoFraction, ...
-        'Display', params.Display, ...
-        'InitialPopulationMatrix', initialPopulation, ...
-        'OutputFcn', @saveCheckpoint);
+    initialPopulation(i, :) = individual;
 end
+
+options = optimoptions('gamultiobj', ...
+    'PopulationSize', params.PopulationSize, ...
+    'MaxGenerations', params.MaxGenerations, ...
+    'FunctionTolerance', params.FunctionTolerance, ...
+    'MaxStallGenerations', params.MaxStallGenerations, ...
+    'UseParallel', params.UseParallel, ...
+    'ParetoFraction', params.ParetoFraction, ...
+    'Display', params.Display, ...
+    'InitialPopulationMatrix', initialPopulation);
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
@@ -325,11 +316,4 @@ xlabel('Precision');
 ylabel('Recall');
 title('Pareto Front');
 saveas(gcf, fullfile(outputDir, 'pareto_front.png'));
-end
-
-function [state, options, optchanged] = saveCheckpoint(options, state, flag)
-optchanged = false;
-if strcmp(flag, 'iter') || strcmp(flag, 'diagnose')
-    save('output/gamultiobj_state.mat', 'state', 'options');
-end
 end
