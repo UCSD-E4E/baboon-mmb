@@ -68,7 +68,6 @@ validPath = @(x) ischar(x) && isfolder(x);
 validFile = @(x) ischar(x) && isfile(x);
 validNumericStr = @(x) ischar(x) && ~isnan(str2double(x));
 validBooleanStr = @(x) ischar(x) && any(strcmpi(x, {'true', 'false', '0', '1'}));
-validOptType = @(x) ischar(x) && any(str2double(x) == [1, 2, 3, 4]);
 
 addParameter(parser, 'InputPath', 'input/viso_video_1', validPath);
 addParameter(parser, 'GroundTruthPath', 'input/viso_video_1_gt.txt', validFile);
@@ -77,11 +76,10 @@ addParameter(parser, 'PopulationSize', '1000', validNumericStr);
 addParameter(parser, 'MaxGenerations', '1e9', validNumericStr);
 addParameter(parser, 'FunctionTolerance', '1e-10', validNumericStr);
 addParameter(parser, 'MaxStallGenerations', '1e6', validNumericStr);
-addParameter(parser, 'UseParallel', 'true', validBooleanStr);
+addParameter(parser, 'UseParallel', 'false', validBooleanStr);
 addParameter(parser, 'ParetoFraction', '0.7', validNumericStr);
 addParameter(parser, 'Display', 'iter', @ischar);
 addParameter(parser, 'Continue', 'false', validBooleanStr);
-addParameter(parser, 'OptimizationType', '2', validOptType);
 end
 
 function results = convertParams(parsedResults)
@@ -221,7 +219,6 @@ end
 
 % Analyze each unique frame
 uniqueFrames = unique([groundTruthData.frameNumber, [detectedData.frameNumber]]);
-largeCost = 1e6;
 
 for frame = uniqueFrames
     gtObjects = groundTruthData([groundTruthData.frameNumber] == frame);
@@ -229,93 +226,57 @@ for frame = uniqueFrames
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
     
-    switch userParams.OptimizationType
-        case 1
-            matchedDetections = false(numDet, 1);
-            matchedGroundTruth = false(numGt, 1);
-            
-            for i = 1:numGt
-                bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                
-                for j = 1:numDet
-                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        matchedDetections(j) = true;
-                        matchedGroundTruth(i) = true;
-                    end
-                end
+    % Initialize cost matrix
+    cost_matrix = zeros(numGt, numDet);
+
+    % Calcuate IoU for each detection and ground truth pair
+    for i = 1:numDet
+        for j = 1:numGt
+            detBox = [detectedObjects(i).x, detectedObjects(i).y, detectedObjects(i).width, detectedObjects(i).height];
+            gtBox = [gtObjects(j).x, gtObjects(j).y, gtObjects(j).width, gtObjects(j).height];
+
+            xD = max([detBox(1), gtBox(1)]);
+            yD = max([detBox(2), gtBox(2)]);
+            xG = min([detBox(1) + detBox(3), gtBox(1) + gtBox(3)]);
+            yG = min([detBox(2) + detBox(4), gtBox(2) + gtBox(4)]);
+
+            % Calculate intersection area
+            interArea = max(0, xG - xD) * max(0, yG - yD);
+
+            % Calculate areas of each box
+            boxAArea = detBox(3) * detBox(4);
+            boxBArea = gtBox(3) * gtBox(4);
+
+            % Compute union area
+            unionArea = boxAArea + boxBArea - interArea;
+
+            % Compute IoU
+            if unionArea > 0
+                iou = interArea / unionArea;
+            else
+                iou = 0;
             end
-            
-            TP = TP + sum(matchedGroundTruth);
-            FP = FP + sum(~matchedDetections);
-            FN = FN + sum(~matchedGroundTruth);
-        case 2
-            costMatrix = largeCost * ones(numGt, numDet);
-            
-            for i = 1:numGt
-                for j = 1:numDet
-                    bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                    bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                    overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                    if overlapRatio > 0
-                        costMatrix(i, j) = 1 - overlapRatio;
-                    end
-                end
-            end
-            
-            [assignments, unassignedRows, unassignedCols] = assignDetectionsToTracks(costMatrix, largeCost - 1);
-            TP = TP + size(assignments, 1);
-            FP = FP + length(unassignedCols);
-            FN = FN + length(unassignedRows);
-        case 3
-            matchedGt = false(1, numGt);
-            for j = 1:numDet
-                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                maxOverlap = 0;
-                bestMatchedIdx = 0;
-                for i = 1:numGt
-                    if ~matchedGt(i)
-                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                        overlapRatio = bboxOverlapRatio(bbGt, bbDet);
-                        if overlapRatio > maxOverlap
-                            maxOverlap = overlapRatio;
-                            bestMatchedIdx = i;
-                        end
-                        
-                    end
-                end
-                if maxOverlap > 0
-                    TP = TP + 1;
-                    matchedGt(bestMatchedIdx) = true;
-                else
-                    FP = FP + 1;
-                end
-            end
-            
-            FN = FN + sum(~matchedGt);
-        case 4
-            matchedGt = false(1, numGt);
-            for j = 1:numDet
-                bbDet = [detectedObjects(j).x, detectedObjects(j).y, detectedObjects(j).width, detectedObjects(j).height];
-                perfectMatch = false;
-                for i = 1:numGt
-                    if ~matchedGt(i)
-                        bbGt = [gtObjects(i).x, gtObjects(i).y, gtObjects(i).width, gtObjects(i).height];
-                        if isequal(bbGt, bbDet)
-                            TP = TP + 1;
-                            matchedGt(i) = true;
-                            perfectMatch = true;
-                            break;
-                        end
-                    end
-                end
-                if ~perfectMatch
-                    FP = FP + 1;
-                end
-            end
-            FN = FN + sum(~matchedGt);
+            cost_matrix(i, j) = iou;
+        end
     end
+
+    iou_threshold = 0.0;
+
+    assignments = matchpairs(-cost_matrix, iou_threshold);
+
+    % Count true positives
+    for k = 1:size(assignments, 1)
+        if cost_matrix(assignments(k, 1), assignments(k, 2)) > iou_threshold
+            TP = TP + 1;
+        else
+            FP = FP + 1;
+            FN = FN + 1;
+        end
+    end
+
+    % Count false positive and false negative
+    FP = FP + (numDet - size(assignments, 1));
+    FN = FN + (numGt - size(assignments, 1));
 end
 
 % Calculate precision, recall, and F1-score

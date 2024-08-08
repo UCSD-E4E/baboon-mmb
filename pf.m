@@ -36,7 +36,7 @@ function output = pf(PIPELINE_LENGTH, PIPELINE_SIZE, H, combinedMasks)
             if ~isempty(buffer{bufIdx}) && ~isempty(buffer{1})
                 costMatrix = computeCostMatrix(buffer{1}, buffer{bufIdx});
                 largeCost = 1e6;  % A large cost for unmatched assignments
-                [assignments, ~] = matchpairs(costMatrix, largeCost);
+                assignments = matchpairs(costMatrix, largeCost);
 
                 for objIdx = 1:size(assignments, 1)
                     if assignments(objIdx, 2) > 0
