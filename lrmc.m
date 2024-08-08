@@ -1,7 +1,7 @@
 function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, FRAME_RATE, grayFrames)
 % fprintf('Processing frames using LRMC...\n');
 numFrames = numel(grayFrames);
-N = max(1, floor(numFrames / (L * FRAME_RATE)));  % Ensure N is at least 1
+N = max(1, min(floor(numFrames / (L * FRAME_RATE)), numFrames));  % Ensure N is at least 1
 
 output = cell(1, numFrames);  % Preallocate output cell array
 se = strel('disk', double(max(1, floor(KERNEL/2))));
