@@ -105,28 +105,28 @@ else
     populationSize = params.PopulationSize;
     numVariables = length(mu);
     initialPopulation = zeros(populationSize, numVariables);
-    
+
     for i = 1:populationSize
         valid = false;
         while ~valid
             % Generate normally distributed random numbers
-            individual = mu + std .* randn(1, numVariables);
+            individual = (mu + std .* randn(numVariables, 1))';
             % Ensure the values are within bounds
-            if all(individual >= lb) && all(individual <= ub)
+            if all(individual >= lb' & individual <= ub')
                 % Ensure integer constraints
                 individual(intIndices) = round(individual(intIndices));
                 % Check constraints
                 if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
                         individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
                         individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
-                        individual(14) <= individual(15)        % GAMMA1_PARAM <= GAMMA2_PARAM
+                        individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
                     valid = true;
                 end
             end
         end
         initialPopulation(i, :) = individual;
     end
-    
+
     options = optimoptions('gamultiobj', ...
         'PopulationSize', params.PopulationSize, ...
         'MaxGenerations', params.MaxGenerations, ...
@@ -175,7 +175,7 @@ numberOfVariables = length(lb);
             x(12) - x(10); % H <= PIPELINE_LENGTH
             x(14) - x(15); % GAMMA1_PARAM <= GAMMA2_PARAM
             ];
-        
+
         % Nonlinear equality constraints (ceq = 0)
         ceq = [];
     end
@@ -215,7 +215,7 @@ for frame = uniqueFrames
     detectedObjects = detectedData([detectedData.frameNumber] == frame);
     numGt = length(gtObjects);
     numDet = length(detectedObjects);
-    
+
     % Initialize cost matrix
     cost_matrix = zeros(numGt, numDet);
 
