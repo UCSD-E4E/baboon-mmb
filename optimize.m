@@ -48,11 +48,10 @@ ub(12) = min(ub(12), frameCount - 1);
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices);
+[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices);
 
-% Save results and plot the Pareto front
-saveOptimizationResults(solution, fval, exitFlag, output);
-plotParetoFront(fval);
+% Save the solution to a file
+save('output/solution.mat', 'solution');
 end
 
 function config = readConfigFile(filename)
@@ -295,25 +294,4 @@ if fileID == -1
 end
 fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
-end
-
-function saveOptimizationResults(x, Fval, exitFlag, Output)
-outputDir = 'output/';
-if ~isfolder(outputDir)
-    mkdir(outputDir);
-end
-save(fullfile(outputDir, 'final_pareto_solutions.mat'), 'x', 'Fval', 'exitFlag', 'Output');
-end
-
-function plotParetoFront(Fval)
-outputDir = 'output/';
-if ~isfolder(outputDir)
-    mkdir(outputDir);
-end
-figure;
-plot(Fval(:,1), Fval(:,2), 'bo');
-xlabel('Precision');
-ylabel('Recall');
-title('Pareto Front');
-saveas(gcf, fullfile(outputDir, 'pareto_front.png'));
 end
