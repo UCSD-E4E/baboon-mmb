@@ -1,4 +1,5 @@
 # Baboon MMB
+
 ## Overview
 This repository contains the MATLAB implementation of the Motion Modeling Baseline (MMB) described in the paper "Detecting and Tracking Small and Dense Moving Objects in Satellite Videos: A Benchmark" by Qian Yin et al.
 
@@ -56,46 +57,101 @@ You can configure the behavior of the algorithms by setting different command-li
 #### Optimize
 If you would prefer to iteratively run `baboon_mmb()` to determine the best hyperparameters, `optimize.m` can be configured and compiled. Note this operation is long and is intended to be run on a cloud computer.
 
-To use the `optimize` function, you can call it from the MATLAB command line with various parameters. Here's an example of how to use it:
+To use the `optimize` function, you need to configure the `config.json` file. Here is an example of the `config.json` file:
 
-```matlab
-optimize('InputPath', 'path/to/image/sequence/', ...
-         'GroundTruthPath', 'path/to/ground_truth.txt', ...
-         'FrameRate', '10', ...
-         'PopulationSize', '1000', ...
-         'MaxGenerations', '1e9', ...
-         'FunctionTolerance', '1e-10', ...
-         'MaxStallGenerations', '1e6', ...
-         'UseParallel', 'true', ...
-         'ParetoFraction', '0.7', ...
-         'Display', 'iter', ...
-         'Continue', 'false', ...
-         'OptimizationType', '2')
+```json
+{
+  "lb": [
+    "0",
+    "1",
+    "1",
+    "1",
+    "1",
+    "1",
+    "0",
+    "0",
+    "1",
+    "0",
+    "0",
+    "0",
+    "1",
+    "0",
+    "0"
+  ],
+  "ub": [
+    "Inf",
+    "2",
+    "Inf",
+    "Inf",
+    "Inf",
+    "Inf",
+    "Inf",
+    "Inf",
+    "2",
+    "Inf",
+    "Inf",
+    "Inf",
+    "Inf",
+    "1",
+    "1"
+  ],
+  "mu": [
+    "4",
+    "2",
+    "5",
+    "80",
+    "1",
+    "6",
+    "4",
+    "3",
+    "1",
+    "5",
+    "7",
+    "3",
+    "10",
+    "0.3",
+    "0.8"
+  ],
+  "std": [
+    "1",
+    "0.25",
+    "1",
+    "19.75",
+    "0.25",
+    "1.25",
+    "1",
+    "0.75",
+    "0.25",
+    "1.25",
+    "1.75",
+    "0.75",
+    "2.25",
+    "0.075",
+    "0.05"
+  ],
+  "intIndices": [
+    2,
+    3,
+    4,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+  ],
+  "InputPath": "input/viso_video_1",
+  "GroundTruthPath": "input/viso_video_1_gt.txt",
+  "FrameRate": "10",
+  "PopulationSize": "1000",
+  "MaxGenerations": "1e9",
+  "FunctionTolerance": "1e-10",
+  "MaxStallGenerations": "1e6",
+  "UseParallel": "false",
+  "ParetoFraction": "0.7",
+  "Display": "iter",
+}
 ```
-
-Here's a brief explanation of each parameter:
-
-- `InputPath`: Path to the folder containing the input image sequence.
-- `GroundTruthPath`: Path to the ground truth file.
-- `FrameRate`: Frame rate of the input video.
-- `PopulationSize`: Size of the population for the genetic algorithm.
-- `MaxGenerations`: Maximum number of generations for the optimization.
-- `FunctionTolerance`: Tolerance for the objective function.
-- `MaxStallGenerations`: Maximum number of stall generations.
-- `UseParallel`: Whether to use parallel computing (true/false).
-- `ParetoFraction`: Fraction of population on Pareto front.
-- `Display`: Level of display ('off', 'iter', 'diagnose', 'final').
-- `Continue`: Whether to continue from a previous optimization (true/false).
-- `OptimizationType`: Type of optimization (1, 2, 3, or 4).
-
-The optimization process will generate several output files in the `output/` directory:
-
-- `gamultiobj_state.mat`: Saved state of the optimization process.
-- `final_pareto_solutions.mat`: Final Pareto-optimal solutions.
-- `pareto_front.png`: A plot of the Pareto front.
-- Various `.txt` files: Logs of individual optimization runs.
-
-The optimization aims to maximize both precision and recall of the object detection algorithm by adjusting the parameters of `baboon_mmb()`.
 
 ## Citations
 If you use this code in your research, please cite the following papers:
