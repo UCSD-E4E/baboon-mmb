@@ -234,15 +234,37 @@ connectivityValue = connectivityOptions(optParams(2));
 bitwiseOrOptions = [false, true];
 bitwiseOrValue = bitwiseOrOptions(optParams(9));
 
-% Initialize detection and set default values for counts
-detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
-    'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
-    'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
-    'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
-    'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
-    'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
-    'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+try
+    % Initialize detection and set default values for counts
+    detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
+        'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
+        'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
+        'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
+        'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
+        'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
+        'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
+        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+catch e
+    % If baboon_mmb crashes, log the error and return a score of 0
+    fprintf('Error in baboon_mmb: %s\n', e.message);
+    precision = 0;
+    recall = 0;
+    
+    % Log results
+    fprintf('Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n');
+    outputDir = 'output/';
+    if ~isfolder(outputDir)
+        mkdir(outputDir);
+    end
+    fileID = fopen(scoreFile, 'a');
+    if fileID == -1
+        error('Failed to open score file: %s', scoreFile);
+    end
+    fprintf(fileID, '%s Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n', paramStr);
+    fclose(fileID);
+    
+    return;
+end
 
 TP = 0; FP = 0; FN = 0;
 
