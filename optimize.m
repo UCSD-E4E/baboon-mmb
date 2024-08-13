@@ -2,6 +2,22 @@ function optimize(varargin)
 % Optimize function entry point. Parses inputs, configures options,
 % performs optimization, and handles results.
 
+% Parse input arguments for seed
+p = inputParser;
+addOptional(p, 'seed', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+parse(p, varargin{:});
+
+% Set random seed
+if isempty(p.Results.seed)
+    % Generate a seed based on current time if not provided
+    rng('shuffle');
+    seed = rng().Seed;
+else
+    seed = p.Results.seed;
+end
+rng(seed);
+fprintf('Using random seed: %d\n', seed);
+
 % Read configuration file
 config = readConfigFile('config.json');
 
@@ -25,6 +41,39 @@ frameArea = height * width;
 frameCount = numel(dir(fullfile(params.InputPath, '*.jpg')));
 frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
+
+% Load and process ground truth data
+try
+    groundTruthFile = load(params.GroundTruthPath);
+catch
+    error('Failed to load ground truth file: %s', params.GroundTruthPath);
+end
+numEntries = size(groundTruthFile, 1);
+template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+groundTruthData = repmat(template, numEntries, 1);
+for i = 1:numEntries
+    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+    groundTruthData(i).id = groundTruthFile(i, 2);
+    groundTruthData(i).x = groundTruthFile(i, 3);
+    groundTruthData(i).y = groundTruthFile(i, 4);
+    groundTruthData(i).width = groundTruthFile(i, 5);
+    groundTruthData(i).height = groundTruthFile(i, 6);
+    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+end
+
+% Analyze ground truth data
+[areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
+
+% Update config with inferred values, respecting bounds
+config.mu(3) = max(config.lb(3), min(config.ub(3), areaMin));
+config.mu(4) = max(config.lb(4), min(config.ub(4), areaMax));
+config.mu(5) = max(config.lb(5), min(config.ub(5), aspectRatioMin));
+config.mu(6) = max(config.lb(6), min(config.ub(6), aspectRatioMax));
+config.std(3) = areaStd;
+config.std(4) = areaStd;
+config.std(5) = aspectRatioStd;
+config.std(6) = aspectRatioStd;
 
 % Use configuration values
 lb = config.lb;
@@ -51,7 +100,7 @@ options = configureOptions(params, mu, std, lb, ub, intIndices);
 [solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices);
 
 % Save the solution to a file
-save('output/solution.mat', 'solution');
+save('output/solution.mat', 'solution', 'seed');
 end
 
 function config = readConfigFile(filename)
@@ -174,37 +223,26 @@ end
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
 fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
 
-% Generate a unique filename based on the parameters
+% Generate a unique filename for the score file
 paramStr = sprintf('%.4f_', optParams);
-paramHash = generateHash(paramStr); % Use a hash function to create a unique identifier
-resultsFile = fullfile('output', [paramHash, '_results.mat']);
+paramHash = generateHash(paramStr);
 scoreFile = fullfile('output', [paramHash, '_score.txt']);
 
-if isfile(resultsFile)
-    % Load existing results
-    load(resultsFile, 'detectedData');
-    fprintf('Loaded existing results for parameters: %s\n', paramStr);
-else
-    % Map the auxiliary variables
-    connectivityOptions = [4, 8];
-    connectivityValue = connectivityOptions(optParams(2));
-    bitwiseOrOptions = [false, true];
-    bitwiseOrValue = bitwiseOrOptions(optParams(9));
-    
-    % Initialize detection and set default values for counts
-    detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
-        'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
-        'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
-        'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
-        'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
-        'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
-        'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
-    
-    % Save the results for future use
-    save(resultsFile, 'detectedData');
-    fprintf('Saved results for parameters: %s\n', paramStr);
-end
+% Map the auxiliary variables
+connectivityOptions = [4, 8];
+connectivityValue = connectivityOptions(optParams(2));
+bitwiseOrOptions = [false, true];
+bitwiseOrValue = bitwiseOrOptions(optParams(9));
+
+% Initialize detection and set default values for counts
+detectedData = baboon_mmb('K', optParams(1), 'CONNECTIVITY', connectivityValue, ...
+    'AREA_MIN', optParams(3), 'AREA_MAX', optParams(4), ...
+    'ASPECT_RATIO_MIN', optParams(5), 'ASPECT_RATIO_MAX', optParams(6), ...
+    'L', optParams(7), 'KERNEL', optParams(8), 'BITWISE_OR', bitwiseOrValue, ...
+    'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
+    'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
+    'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
+    'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
 
 TP = 0; FP = 0; FN = 0;
 
@@ -300,7 +338,6 @@ outputDir = 'output/';
 if ~isfolder(outputDir)
     mkdir(outputDir);
 end
-paramStr = sprintf('%.4f ', optParams);
 fileID = fopen(scoreFile, 'a');
 if fileID == -1
     error('Failed to open score file: %s', scoreFile);
@@ -314,4 +351,29 @@ function hash = generateHash(inputStr)
 md = java.security.MessageDigest.getInstance('MD5');
 md.update(uint8(inputStr));
 hash = sprintf('%02x', typecast(md.digest(), 'uint8'));
+end
+
+function [areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData)
+    areas = [];
+    aspectRatios = [];
+    
+    for i = 1:numel(groundTruthData)
+        area = groundTruthData(i).width * groundTruthData(i).height;
+        aspectRatio = max(groundTruthData(i).width, groundTruthData(i).height) / min(groundTruthData(i).width, groundTruthData(i).height);
+        
+        areas = [areas, area];
+        aspectRatios = [aspectRatios, aspectRatio];
+    end
+    
+    % Calculate statistics
+    areaMu = mean(areas);
+    areaStd = std(areas);
+    aspectRatioMu = mean(aspectRatios);
+    aspectRatioStd = std(aspectRatios);
+    
+    % Calculate min and max values
+    areaMin = max(1, floor(min(areas) - 0.5 * areaStd));
+    areaMax = ceil(max(areas) + 0.5 * areaStd);
+    aspectRatioMin = max(1, floor(min(aspectRatios) - 0.5 * aspectRatioStd));
+    aspectRatioMax = ceil(max(aspectRatios) + 0.5 * aspectRatioStd);
 end
