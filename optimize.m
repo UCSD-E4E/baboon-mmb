@@ -63,13 +63,7 @@ for i = 1:numEntries
 end
 
 % Analyze ground truth data
-[areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
-
-% Update config with inferred values, respecting bounds
-config.mu(3) = max(config.lb(3), min(config.ub(3), areaMin));
-config.mu(4) = max(config.lb(4), min(config.ub(4), areaMax));
-config.mu(5) = max(config.lb(5), min(config.ub(5), aspectRatioMin));
-config.mu(6) = max(config.lb(6), min(config.ub(6), aspectRatioMax));
+[~, ~, ~, ~, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
 
 % Use configuration values
 lb = config.lb;
@@ -88,12 +82,18 @@ ub(10) = min(ub(10), frameCount - 1);
 ub(11) = min(ub(11), frameDiagonal);
 ub(12) = min(ub(12), frameCount - 1);
 
-% Set the stds
-config.std(3) = min([abs(config.mu(3) - config.lb(3)), abs(config.ub(3) - config.mu(3)), abs(config.mu(4) - config.mu(3))]);
-config.std(4) = min([abs(config.mu(4) - config.lb(4)), abs(config.ub(4) - config.mu(4)), abs(config.mu(4) - config.mu(3))]);
-config.std(5) = min([abs(config.mu(5) - config.lb(5)), abs(config.ub(5) - config.mu(5)), abs(config.mu(6) - config.mu(5))]);
-config.std(6) = min([abs(config.mu(6) - config.lb(6)), abs(config.ub(6) - config.mu(6)), abs(config.mu(6) - config.mu(5))]);
+% Update mu with inferred values, respecting adjusted bounds
+mu(3) = max(lb(3), min(ub(3), areaMin));
+mu(4) = max(lb(4), min(ub(4), areaMax));
+mu(5) = max(lb(5), min(ub(5), aspectRatioMin));
+mu(6) = max(lb(6), min(ub(6), aspectRatioMax));
+
+% Now update the std values
 std = config.std;
+std(3) = min([abs(mu(3) - lb(3)), abs(ub(3) - mu(3)), abs(mu(4) - mu(3))]);
+std(4) = min([abs(mu(4) - lb(4)), abs(ub(4) - mu(4)), abs(mu(4) - mu(3))]);
+std(5) = min([abs(mu(5) - lb(5)), abs(ub(5) - mu(5)), abs(mu(6) - mu(5))]);
+std(6) = min([abs(mu(6) - lb(6)), abs(ub(6) - mu(6)), abs(mu(6) - mu(5))]);
 
 % Configure optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
@@ -223,7 +223,10 @@ numberOfVariables = length(lb);
 end
 
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
-fprintf('Running parameters: %s\n', sprintf('%.4f ', optParams));
+% Get current date and time
+currentDateTime = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+
+fprintf('%s - Running parameters: %s\n', currentDateTime, sprintf('%.4f ', optParams));
 
 % Generate a unique filename for the score file
 paramStr = sprintf('%.4f_', optParams);
@@ -248,12 +251,12 @@ try
         'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
 catch e
     % If baboon_mmb crashes, log the error and return a score of 0
-    fprintf('Error in baboon_mmb: %s\n', e.message);
+    fprintf('%s - Error in baboon_mmb: %s\n', currentDateTime, e.message);
     precision = 0;
     recall = 0;
     
     % Log results
-    fprintf('Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n');
+    fprintf('%s - Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n', currentDateTime);
     outputDir = 'output/';
     if ~isfolder(outputDir)
         mkdir(outputDir);
@@ -357,7 +360,7 @@ else
 end
 
 % Log results
-fprintf('Precision: %.4f Recall: %.4f F1: %.4f\n', precision, recall, f1Score);
+fprintf('%s - Precision: %.4f Recall: %.4f F1: %.4f\n', currentDateTime, precision, recall, f1Score);
 outputDir = 'output/';
 if ~isfolder(outputDir)
     mkdir(outputDir);
