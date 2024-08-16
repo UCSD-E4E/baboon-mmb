@@ -81,7 +81,7 @@
   "InputPath": "input/viso_video_1",
   "GroundTruthPath": "input/viso_video_1_gt.txt",
   "FrameRate": "10",
-  "PopulationSize": "1000",
+  "PopulationSize": "250",
   "MaxGenerations": "1e9",
   "FunctionTolerance": "1e-10",
   "MaxStallGenerations": "1e6",
