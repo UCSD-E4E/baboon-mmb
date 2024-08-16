@@ -70,16 +70,11 @@ config.mu(3) = max(config.lb(3), min(config.ub(3), areaMin));
 config.mu(4) = max(config.lb(4), min(config.ub(4), areaMax));
 config.mu(5) = max(config.lb(5), min(config.ub(5), aspectRatioMin));
 config.mu(6) = max(config.lb(6), min(config.ub(6), aspectRatioMax));
-config.std(3) = areaStd;
-config.std(4) = areaStd;
-config.std(5) = aspectRatioStd;
-config.std(6) = aspectRatioStd;
 
 % Use configuration values
 lb = config.lb;
 ub = config.ub;
 mu = config.mu;
-std = config.std;
 intIndices = config.intIndices;
 
 % Adjust upper bounds based on image properties
@@ -92,6 +87,13 @@ ub(8) = min(ub(8), maxDimension);
 ub(10) = min(ub(10), frameCount - 1);
 ub(11) = min(ub(11), frameDiagonal);
 ub(12) = min(ub(12), frameCount - 1);
+
+% Set the stds
+config.std(3) = min([abs(config.mu(3) - config.lb(3)), abs(config.ub(3) - config.mu(3)), abs(config.mu(4) - config.mu(3))]);
+config.std(4) = min([abs(config.mu(4) - config.lb(4)), abs(config.ub(4) - config.mu(4)), abs(config.mu(4) - config.mu(3))]);
+config.std(5) = min([abs(config.mu(5) - config.lb(5)), abs(config.ub(5) - config.mu(5)), abs(config.mu(6) - config.mu(5))]);
+config.std(6) = min([abs(config.mu(6) - config.lb(6)), abs(config.ub(6) - config.mu(6)), abs(config.mu(6) - config.mu(5))]);
+std = config.std;
 
 % Configure optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
