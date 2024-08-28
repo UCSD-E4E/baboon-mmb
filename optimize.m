@@ -43,24 +43,7 @@ frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
 % Load and process ground truth data
-try
-    groundTruthFile = load(params.GroundTruthPath);
-catch
-    error('Failed to load ground truth file: %s', params.GroundTruthPath);
-end
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-end
+groundTruthData = loadGroundTruth(params.GroundTruthPath);
 
 % Analyze ground truth data
 [~, ~, ~, ~, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
@@ -99,7 +82,7 @@ std(6) = min([abs(mu(6) - lb(6)), abs(ub(6) - mu(6)), abs(mu(6) - mu(5))]);
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices);
+[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices, groundTruthData);
 
 % Save the solution to a file
 save('output/solution.mat', 'solution', 'seed');
@@ -181,32 +164,12 @@ options = optimoptions('gamultiobj', ...
     'InitialPopulationMatrix', initialPopulation);
 end
 
-function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
-% Load and process ground truth data
-try
-    groundTruthFile = load(params.GroundTruthPath);
-catch
-    error('Failed to load ground truth file: %s', params.GroundTruthPath);
-end
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-end
+function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices, groundTruthData)
+    FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
 
-FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
-
-% Perform multi-objective optimization
-numberOfVariables = length(lb);
-[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+    % Perform multi-objective optimization
+    numberOfVariables = length(lb);
+    [x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
         % Define nonlinear inequality and equality constraints
@@ -403,4 +366,25 @@ function [areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspe
     areaMax = ceil(max(areas) + 0.5 * areaStd);
     aspectRatioMin = max(1, floor(min(aspectRatios) - 0.5 * aspectRatioStd));
     aspectRatioMax = ceil(max(aspectRatios) + 0.5 * aspectRatioStd);
+end
+
+function groundTruthData = loadGroundTruth(groundTruthPath)
+    try
+        groundTruthFile = load(groundTruthPath);
+    catch
+        error('Failed to load ground truth file: %s', groundTruthPath);
+    end
+    numEntries = size(groundTruthFile, 1);
+    template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+    groundTruthData = repmat(template, numEntries, 1);
+    for i = 1:numEntries
+        groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+        groundTruthData(i).id = groundTruthFile(i, 2);
+        groundTruthData(i).x = groundTruthFile(i, 3);
+        groundTruthData(i).y = groundTruthFile(i, 4);
+        groundTruthData(i).width = groundTruthFile(i, 5);
+        groundTruthData(i).height = groundTruthFile(i, 6);
+        groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+        groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+    end
 end
