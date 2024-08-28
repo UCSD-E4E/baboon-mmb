@@ -196,6 +196,24 @@ paramStr = sprintf('%.4f_', optParams);
 paramHash = generateHash(paramStr);
 scoreFile = fullfile('output', [paramHash, '_score.txt']);
 
+% Check if the score file already exists
+if exist(scoreFile, 'file')
+    % Read the existing score file
+    fileID = fopen(scoreFile, 'r');
+    if fileID == -1
+        error('Failed to open existing score file: %s', scoreFile);
+    end
+    scoreData = textscan(fileID, '%*s Precision: %f Recall: %f F1: %f');
+    fclose(fileID);
+    
+    % Extract precision and recall from the file
+    precision = scoreData{1};
+    recall = scoreData{2};
+    
+    fprintf('%s - Using existing scores - Precision: %.4f Recall: %.4f\n', currentDateTime, precision, recall);
+    return;
+end
+
 % Map the auxiliary variables
 connectivityOptions = [4, 8];
 connectivityValue = connectivityOptions(optParams(2));
