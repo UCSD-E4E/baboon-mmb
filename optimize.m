@@ -43,24 +43,7 @@ frameDiagonal = sqrt(width^2 + height^2);
 maxDimension = max(height, width);
 
 % Load and process ground truth data
-try
-    groundTruthFile = load(params.GroundTruthPath);
-catch
-    error('Failed to load ground truth file: %s', params.GroundTruthPath);
-end
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
-end
+groundTruthData = loadGroundTruth(params.GroundTruthPath);
 
 % Analyze ground truth data
 [~, ~, ~, ~, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
@@ -99,7 +82,7 @@ std(6) = min([abs(mu(6) - lb(6)), abs(ub(6) - mu(6)), abs(mu(6) - mu(5))]);
 options = configureOptions(params, mu, std, lb, ub, intIndices);
 
 % Perform the optimization
-[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices);
+[solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices, groundTruthData);
 
 % Save the solution to a file
 save('output/solution.mat', 'solution', 'seed');
@@ -144,16 +127,27 @@ end
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
 % Configure optimization options
 
-% Generate initial population using mu and std
-populationSize = params.PopulationSize;
-numVariables = length(mu);
-initialPopulation = zeros(populationSize, numVariables);
+% Read and sort existing scores, excluding those with F1 score of 0
+[existingParams, existingScores] = readExistingScores('output');
 
-for i = 1:populationSize
+% Determine how many existing solutions to use
+populationSize = params.PopulationSize;
+numExisting = min(size(existingParams, 1), populationSize);
+
+% Initialize the population matrix
+initialPopulation = zeros(populationSize, length(mu));
+
+% Fill in existing high-scoring solutions if any
+if numExisting > 0
+    initialPopulation(1:numExisting, :) = existingParams(1:numExisting, :);
+end
+
+% Generate the rest of the population
+for i = (numExisting + 1):populationSize
     valid = false;
     while ~valid
         % Generate normally distributed random numbers
-        individual = (mu + std .* randn(numVariables, 1))';
+        individual = (mu + std .* randn(length(mu), 1))';
         % Ensure the values are within bounds
         if all(individual >= lb' & individual <= ub')
             % Ensure integer constraints
@@ -181,32 +175,52 @@ options = optimoptions('gamultiobj', ...
     'InitialPopulationMatrix', initialPopulation);
 end
 
-function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices)
-% Load and process ground truth data
-try
-    groundTruthFile = load(params.GroundTruthPath);
-catch
-    error('Failed to load ground truth file: %s', params.GroundTruthPath);
-end
-numEntries = size(groundTruthFile, 1);
-template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
-groundTruthData = repmat(template, numEntries, 1);
-for i = 1:numEntries
-    groundTruthData(i).frameNumber = groundTruthFile(i, 1);
-    groundTruthData(i).id = groundTruthFile(i, 2);
-    groundTruthData(i).x = groundTruthFile(i, 3);
-    groundTruthData(i).y = groundTruthFile(i, 4);
-    groundTruthData(i).width = groundTruthFile(i, 5);
-    groundTruthData(i).height = groundTruthFile(i, 6);
-    groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
-    groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+function [sortedParams, sortedScores] = readExistingScores(outputDir)
+    % Read all score files in the output directory
+    files = dir(fullfile(outputDir, '*_score.txt'));
+    params = [];
+    scores = [];
+    
+    for i = 1:length(files)
+        filename = fullfile(outputDir, files(i).name);
+        fid = fopen(filename, 'r');
+        if fid == -1
+            warning('Could not open file: %s', filename);
+            continue;
+        end
+        
+        line = fgetl(fid);
+        fclose(fid);
+        
+        % Parse the line
+        parts = strsplit(line);
+        if length(parts) >= 18  % Expecting 15 parameters + 3 scores
+            paramValues = str2double(parts(1:15));
+            precision = str2double(parts{end-2});
+            recall = str2double(parts{end-1});
+            f1 = str2double(parts{end});
+            
+            % Only include solutions with non-zero F1 score
+            if f1 > 0
+                params = [params; paramValues];
+                scores = [scores; f1]; % Using F1 score for ranking
+            end
+        else
+            warning('Invalid format in file: %s', filename);
+        end
+    end
+    
+    % Sort params by score in descending order
+    [sortedScores, sortIndex] = sort(scores, 'descend');
+    sortedParams = params(sortIndex, :);
 end
 
-FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
+function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices, groundTruthData)
+    FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
 
-% Perform multi-objective optimization
-numberOfVariables = length(lb);
-[x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
+    % Perform multi-objective optimization
+    numberOfVariables = length(lb);
+    [x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
     function [c, ceq] = constraintFunction(x)
         % Define nonlinear inequality and equality constraints
@@ -232,6 +246,24 @@ fprintf('%s - Running parameters: %s\n', currentDateTime, sprintf('%.4f ', optPa
 paramStr = sprintf('%.4f_', optParams);
 paramHash = generateHash(paramStr);
 scoreFile = fullfile('output', [paramHash, '_score.txt']);
+
+% Check if the score file already exists
+if exist(scoreFile, 'file')
+    % Read the existing score file
+    fileID = fopen(scoreFile, 'r');
+    if fileID == -1
+        error('Failed to open existing score file: %s', scoreFile);
+    end
+    scoreData = textscan(fileID, '%*s %f %f %f');
+    fclose(fileID);
+    
+    % Extract precision and recall from the file
+    precision = scoreData{1};
+    recall = scoreData{2};
+    
+    fprintf('%s - Using existing scores - Precision: %.4f Recall: %.4f\n', currentDateTime, precision, recall);
+    return;
+end
 
 % Map the auxiliary variables
 connectivityOptions = [4, 8];
@@ -265,7 +297,7 @@ catch e
     if fileID == -1
         error('Failed to open score file: %s', scoreFile);
     end
-    fprintf(fileID, '%s Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n', paramStr);
+    fprintf(fileID, '%s %.4f %.4f %.4f\n', paramStr, precision, recall, 0);
     fclose(fileID);
     
     return;
@@ -369,7 +401,7 @@ fileID = fopen(scoreFile, 'a');
 if fileID == -1
     error('Failed to open score file: %s', scoreFile);
 end
-fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
+fprintf(fileID, '%s %.4f %.4f %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
 
@@ -403,4 +435,25 @@ function [areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspe
     areaMax = ceil(max(areas) + 0.5 * areaStd);
     aspectRatioMin = max(1, floor(min(aspectRatios) - 0.5 * aspectRatioStd));
     aspectRatioMax = ceil(max(aspectRatios) + 0.5 * aspectRatioStd);
+end
+
+function groundTruthData = loadGroundTruth(groundTruthPath)
+    try
+        groundTruthFile = load(groundTruthPath);
+    catch
+        error('Failed to load ground truth file: %s', groundTruthPath);
+    end
+    numEntries = size(groundTruthFile, 1);
+    template = struct('frameNumber', [], 'id', [], 'x', [], 'y', [], 'width', [], 'height', [], 'cx', [], 'cy', []);
+    groundTruthData = repmat(template, numEntries, 1);
+    for i = 1:numEntries
+        groundTruthData(i).frameNumber = groundTruthFile(i, 1);
+        groundTruthData(i).id = groundTruthFile(i, 2);
+        groundTruthData(i).x = groundTruthFile(i, 3);
+        groundTruthData(i).y = groundTruthFile(i, 4);
+        groundTruthData(i).width = groundTruthFile(i, 5);
+        groundTruthData(i).height = groundTruthFile(i, 6);
+        groundTruthData(i).cx = groundTruthFile(i, 3) + groundTruthFile(i, 5) / 2;
+        groundTruthData(i).cy = groundTruthFile(i, 4) + groundTruthFile(i, 6) / 2;
+    end
 end
