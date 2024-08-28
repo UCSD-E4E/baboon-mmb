@@ -127,16 +127,25 @@ end
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
 % Configure optimization options
 
-% Generate initial population using mu and std
-populationSize = params.PopulationSize;
-numVariables = length(mu);
-initialPopulation = zeros(populationSize, numVariables);
+% Read and sort existing scores
+[existingParams, existingScores] = readExistingScores('output');
 
-for i = 1:populationSize
+% Determine how many existing solutions to use
+populationSize = params.PopulationSize;
+numExisting = min(size(existingParams, 1), populationSize);
+
+% Initialize the population matrix
+initialPopulation = zeros(populationSize, length(mu));
+
+% Fill in existing high-scoring solutions
+initialPopulation(1:numExisting, :) = existingParams(1:numExisting, :);
+
+% Generate the rest of the population if needed
+for i = (numExisting + 1):populationSize
     valid = false;
     while ~valid
         % Generate normally distributed random numbers
-        individual = (mu + std .* randn(numVariables, 1))';
+        individual = (mu + std .* randn(length(mu), 1))';
         % Ensure the values are within bounds
         if all(individual >= lb' & individual <= ub')
             % Ensure integer constraints
@@ -162,6 +171,41 @@ options = optimoptions('gamultiobj', ...
     'ParetoFraction', params.ParetoFraction, ...
     'Display', params.Display, ...
     'InitialPopulationMatrix', initialPopulation);
+end
+
+function [sortedParams, sortedScores] = readExistingScores(outputDir)
+    % Read all score files in the output directory
+    files = dir(fullfile(outputDir, '*_score.txt'));
+    params = [];
+    scores = [];
+    
+    for i = 1:length(files)
+        filename = fullfile(outputDir, files(i).name);
+        fid = fopen(filename, 'r');
+        if fid == -1
+            warning('Could not open file: %s', filename);
+            continue;
+        end
+        
+        line = fgetl(fid);
+        fclose(fid);
+        
+        % Parse the line
+        parts = strsplit(line);
+        if length(parts) >= 4
+            paramValues = str2double(parts(1:end-3));
+            precision = str2double(parts{end-2});
+            recall = str2double(parts{end-1});
+            f1 = str2double(parts{end});
+            
+            params = [params; paramValues];
+            scores = [scores; f1]; % Using F1 score for ranking
+        end
+    end
+    
+    % Sort params by score in descending order
+    [sortedScores, sortIndex] = sort(scores, 'descend');
+    sortedParams = params(sortIndex, :);
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices, groundTruthData)
@@ -203,7 +247,7 @@ if exist(scoreFile, 'file')
     if fileID == -1
         error('Failed to open existing score file: %s', scoreFile);
     end
-    scoreData = textscan(fileID, '%*s Precision: %f Recall: %f F1: %f');
+    scoreData = textscan(fileID, '%*s %f %f %f');
     fclose(fileID);
     
     % Extract precision and recall from the file
@@ -246,7 +290,7 @@ catch e
     if fileID == -1
         error('Failed to open score file: %s', scoreFile);
     end
-    fprintf(fileID, '%s Precision: 0.0000 Recall: 0.0000 F1: 0.0000\n', paramStr);
+    fprintf(fileID, '%s %.4f %.4f %.4f\n', paramStr, precision, recall, 0);
     fclose(fileID);
     
     return;
@@ -350,7 +394,7 @@ fileID = fopen(scoreFile, 'a');
 if fileID == -1
     error('Failed to open score file: %s', scoreFile);
 end
-fprintf(fileID, '%s Precision: %.4f Recall: %.4f F1: %.4f\n', paramStr, precision, recall, f1Score);
+fprintf(fileID, '%s %.4f %.4f %.4f\n', paramStr, precision, recall, f1Score);
 fclose(fileID);
 end
 
