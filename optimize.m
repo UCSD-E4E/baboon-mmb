@@ -137,10 +137,12 @@ numExisting = min(size(existingParams, 1), populationSize);
 % Initialize the population matrix
 initialPopulation = zeros(populationSize, length(mu));
 
-% Fill in existing high-scoring solutions
-initialPopulation(1:numExisting, :) = existingParams(1:numExisting, :);
+% Fill in existing high-scoring solutions if any
+if numExisting > 0
+    initialPopulation(1:numExisting, :) = existingParams(1:numExisting, :);
+end
 
-% Generate the rest of the population if needed
+% Generate the rest of the population
 for i = (numExisting + 1):populationSize
     valid = false;
     while ~valid
@@ -192,8 +194,8 @@ function [sortedParams, sortedScores] = readExistingScores(outputDir)
         
         % Parse the line
         parts = strsplit(line);
-        if length(parts) >= 4
-            paramValues = str2double(parts(1:end-3));
+        if length(parts) >= 18  % Expecting 15 parameters + 3 scores
+            paramValues = str2double(parts(1:15));
             precision = str2double(parts{end-2});
             recall = str2double(parts{end-1});
             f1 = str2double(parts{end});
@@ -203,6 +205,8 @@ function [sortedParams, sortedScores] = readExistingScores(outputDir)
                 params = [params; paramValues];
                 scores = [scores; f1]; % Using F1 score for ranking
             end
+        else
+            warning('Invalid format in file: %s', filename);
         end
     end
     
