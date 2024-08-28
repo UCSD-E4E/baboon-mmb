@@ -127,7 +127,7 @@ end
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
 % Configure optimization options
 
-% Read and sort existing scores
+% Read and sort existing scores, excluding those with F1 score of 0
 [existingParams, existingScores] = readExistingScores('output');
 
 % Determine how many existing solutions to use
@@ -198,8 +198,11 @@ function [sortedParams, sortedScores] = readExistingScores(outputDir)
             recall = str2double(parts{end-1});
             f1 = str2double(parts{end});
             
-            params = [params; paramValues];
-            scores = [scores; f1]; % Using F1 score for ranking
+            % Only include solutions with non-zero F1 score
+            if f1 > 0
+                params = [params; paramValues];
+                scores = [scores; f1]; % Using F1 score for ranking
+            end
         end
     end
     
