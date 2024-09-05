@@ -46,7 +46,7 @@ maxDimension = max(height, width);
 groundTruthData = loadGroundTruth(params.GroundTruthPath);
 
 % Analyze ground truth data
-[~, ~, ~, ~, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
+[~, areaStd, ~, aspectRatioStd, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData);
 
 % Use configuration values
 lb = config.lb;
@@ -73,10 +73,10 @@ mu(6) = max(lb(6), min(ub(6), aspectRatioMax));
 
 % Now update the std values
 std = config.std;
-std(3) = min([abs(mu(3) - lb(3)), abs(ub(3) - mu(3)), abs(mu(4) - mu(3))]);
-std(4) = min([abs(mu(4) - lb(4)), abs(ub(4) - mu(4)), abs(mu(4) - mu(3))]);
-std(5) = min([abs(mu(5) - lb(5)), abs(ub(5) - mu(5)), abs(mu(6) - mu(5))]);
-std(6) = min([abs(mu(6) - lb(6)), abs(ub(6) - mu(6)), abs(mu(6) - mu(5))]);
+std(3) = areaStd;
+std(4) = areaStd;
+std(5) = aspectRatioStd;
+std(6) = aspectRatioStd;
 
 % Configure optimization options
 options = configureOptions(params, mu, std, lb, ub, intIndices);
@@ -127,23 +127,12 @@ end
 function options = configureOptions(params, mu, std, lb, ub, intIndices)
 % Configure optimization options
 
-% Read and sort existing scores, excluding those with F1 score of 0
-[existingParams, existingScores] = readExistingScores('output');
-
-% Determine how many existing solutions to use
-populationSize = params.PopulationSize;
-numExisting = min(size(existingParams, 1), populationSize);
-
 % Initialize the population matrix
+populationSize = params.PopulationSize;
 initialPopulation = zeros(populationSize, length(mu));
 
-% Fill in existing high-scoring solutions if any
-if numExisting > 0
-    initialPopulation(1:numExisting, :) = existingParams(1:numExisting, :);
-end
-
-% Generate the rest of the population
-for i = (numExisting + 1):populationSize
+% Generate the population
+for i = 1:populationSize
     valid = false;
     while ~valid
         % Generate normally distributed random numbers
@@ -173,46 +162,6 @@ options = optimoptions('gamultiobj', ...
     'ParetoFraction', params.ParetoFraction, ...
     'Display', params.Display, ...
     'InitialPopulationMatrix', initialPopulation);
-end
-
-function [sortedParams, sortedScores] = readExistingScores(outputDir)
-    % Read all score files in the output directory
-    files = dir(fullfile(outputDir, '*_score.txt'));
-    params = [];
-    scores = [];
-    
-    for i = 1:length(files)
-        filename = fullfile(outputDir, files(i).name);
-        fid = fopen(filename, 'r');
-        if fid == -1
-            warning('Could not open file: %s', filename);
-            continue;
-        end
-        
-        line = fgetl(fid);
-        fclose(fid);
-        
-        % Parse the line
-        parts = strsplit(line);
-        if length(parts) >= 18  % Expecting 15 parameters + 3 scores
-            paramValues = str2double(parts(1:15));
-            precision = str2double(parts{end-2});
-            recall = str2double(parts{end-1});
-            f1 = str2double(parts{end});
-            
-            % Only include solutions with non-zero F1 score
-            if f1 > 0
-                params = [params; paramValues];
-                scores = [scores; f1]; % Using F1 score for ranking
-            end
-        else
-            warning('Invalid format in file: %s', filename);
-        end
-    end
-    
-    % Sort params by score in descending order
-    [sortedScores, sortIndex] = sort(scores, 'descend');
-    sortedParams = params(sortIndex, :);
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices, groundTruthData)
@@ -246,24 +195,6 @@ fprintf('%s - Running parameters: %s\n', currentDateTime, sprintf('%.4f ', optPa
 paramStr = sprintf('%.4f_', optParams);
 paramHash = generateHash(paramStr);
 scoreFile = fullfile('output', [paramHash, '_score.txt']);
-
-% Check if the score file already exists
-if exist(scoreFile, 'file')
-    % Read the existing score file
-    fileID = fopen(scoreFile, 'r');
-    if fileID == -1
-        error('Failed to open existing score file: %s', scoreFile);
-    end
-    scoreData = textscan(fileID, '%*s %f %f %f');
-    fclose(fileID);
-    
-    % Extract precision and recall from the file
-    precision = scoreData{1};
-    recall = scoreData{2};
-    
-    fprintf('%s - Using existing scores - Precision: %.4f Recall: %.4f\n', currentDateTime, precision, recall);
-    return;
-end
 
 % Map the auxiliary variables
 connectivityOptions = [4, 8];
