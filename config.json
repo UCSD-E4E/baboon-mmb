@@ -87,5 +87,8 @@
   "MaxStallGenerations": "1e6",
   "UseParallel": "false",
   "ParetoFraction": "0.7",
-  "Display": "iter"
+  "Display": "iter",
+  "NumWorkers": "3",
+  "UseParallelBaboonMMB": "true",
+  "MaxStallTime": "21600"
 }

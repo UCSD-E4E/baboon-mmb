@@ -78,10 +78,22 @@ std(4) = areaStd;
 std(5) = aspectRatioStd;
 std(6) = aspectRatioStd;
 
-% Configure optimization options
-options = configureOptions(params, mu, std, lb, ub, intIndices);
+% Add checkpoint functionality
+checkpointFile = 'output/optimization_checkpoint.mat';
+if exist(checkpointFile, 'file')
+    fprintf('Loading checkpoint from %s\n', checkpointFile);
+    load(checkpointFile, 'checkpoint');
+    initialPopulation = checkpoint.population;
+    initialScore = checkpoint.score;
+else
+    initialPopulation = [];
+    initialScore = [];
+end
 
-% Perform the optimization
+% Configure optimization options
+options = configureOptions(params, mu, std, lb, ub, intIndices, initialPopulation, initialScore);
+
+% Perform the optimization with checkpoint support
 [solution, ~, ~, ~] = performOptimization(params, options, lb, ub, intIndices, groundTruthData);
 
 % Save the solution to a file
@@ -122,52 +134,89 @@ params.MaxStallGenerations = str2double(config.MaxStallGenerations);
 params.UseParallel = strcmpi(config.UseParallel, 'true');
 params.ParetoFraction = str2double(config.ParetoFraction);
 params.Display = config.Display;
+params.NumWorkers = str2double(config.NumWorkers);
+params.UseParallelBaboonMMB = strcmpi(config.UseParallelBaboonMMB, 'true');
+params.MaxStallTime = str2double(config.MaxStallTime);
 end
 
-function options = configureOptions(params, mu, std, lb, ub, intIndices)
+function options = configureOptions(params, mu, std, lb, ub, intIndices, initialPopulation, initialScore)
 % Configure optimization options
 
-% Initialize the population matrix
-populationSize = params.PopulationSize;
-initialPopulation = zeros(populationSize, length(mu));
-
-% Generate the population
-for i = 1:populationSize
-    valid = false;
-    while ~valid
-        % Generate normally distributed random numbers
-        individual = (mu + std .* randn(length(mu), 1))';
-        % Ensure the values are within bounds
-        if all(individual >= lb' & individual <= ub')
-            % Ensure integer constraints
-            individual(intIndices) = round(individual(intIndices));
-            % Check constraints
-            if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
-                    individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
-                    individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
-                    individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
-                valid = true;
-            end
+% Set up parallel pool if UseParallel is true
+if params.UseParallel || params.UseParallelBaboonMMB
+    % Create a parallel pool configuration object
+    poolConfig = parcluster('local');
+    
+    if isempty(gcp('nocreate'))
+        parpool(poolConfig, params.NumWorkers);
+    else
+        currentPool = gcp('nocreate');
+        if currentPool.NumWorkers ~= params.NumWorkers
+            delete(gcp('nocreate'));
+            parpool(poolConfig, params.NumWorkers);
         end
     end
-    initialPopulation(i, :) = individual;
 end
 
-options = optimoptions('gamultiobj', ...
-    'PopulationSize', params.PopulationSize, ...
-    'MaxGenerations', params.MaxGenerations, ...
-    'FunctionTolerance', params.FunctionTolerance, ...
-    'MaxStallGenerations', params.MaxStallGenerations, ...
-    'UseParallel', params.UseParallel, ...
-    'ParetoFraction', params.ParetoFraction, ...
-    'Display', params.Display, ...
-    'InitialPopulationMatrix', initialPopulation);
+if ~isempty(initialPopulation)
+    options = optimoptions('gamultiobj', ...
+        'PopulationSize', params.PopulationSize, ...
+        'MaxGenerations', params.MaxGenerations, ...
+        'FunctionTolerance', params.FunctionTolerance, ...
+        'MaxStallGenerations', params.MaxStallGenerations, ...
+        'UseParallel', params.UseParallel, ...
+        'ParetoFraction', params.ParetoFraction, ...
+        'Display', params.Display, ...
+        'InitialPopulationMatrix', initialPopulation, ...
+        'InitialScoresMatrix', initialScore, ...
+        'MaxStallTime', params.MaxStallTime);  % Use the configured MaxStallTime
+else
+    % Initialize the population matrix
+    populationSize = params.PopulationSize;
+    initialPopulation = zeros(populationSize, length(mu));
+
+    % Generate the population
+    for i = 1:populationSize
+        valid = false;
+        while ~valid
+            % Generate normally distributed random numbers
+            individual = (mu + std .* randn(length(mu), 1))';
+            % Ensure the values are within bounds
+            if all(individual >= lb' & individual <= ub')
+                % Ensure integer constraints
+                individual(intIndices) = round(individual(intIndices));
+                % Check constraints
+                if individual(3) <= individual(4) && ...  % AREA_MIN <= AREA_MAX
+                        individual(5) <= individual(6) && ...  % ASPECT_RATIO_MIN <= ASPECT_RATIO_MAX
+                        individual(12) <= individual(10) && ... % H <= PIPELINE_LENGTH
+                        individual(14) <= individual(15)  % GAMMA1_PARAM <= GAMMA2_PARAM
+                    valid = true;
+                end
+            end
+        end
+        initialPopulation(i, :) = individual;
+    end
+
+    options = optimoptions('gamultiobj', ...
+        'PopulationSize', params.PopulationSize, ...
+        'MaxGenerations', params.MaxGenerations, ...
+        'FunctionTolerance', params.FunctionTolerance, ...
+        'MaxStallGenerations', params.MaxStallGenerations, ...
+        'UseParallel', params.UseParallel, ...
+        'ParetoFraction', params.ParetoFraction, ...
+        'Display', params.Display, ...
+        'InitialPopulationMatrix', initialPopulation, ...
+        'MaxStallTime', params.MaxStallTime);  % Use the configured MaxStallTime
+end
+
+% Add output function for checkpointing
+options.OutputFcn = @(options, state, flag) saveCheckpoint(options, state, flag, checkpointFile);
 end
 
 function [x, fval, exitFlag, output] = performOptimization(params, options, lb, ub, intIndices, groundTruthData)
     FitnessFunction = @(optParams) evaluateParams(optParams, params, groundTruthData);
 
-    % Perform multi-objective optimization
+    % Perform multi-objective optimization with checkpoint support
     numberOfVariables = length(lb);
     [x, fval, exitFlag, output] = gamultiobj(FitnessFunction, numberOfVariables, [], [], [], [], lb, ub, @constraintFunction, intIndices, options);
 
@@ -185,9 +234,20 @@ function [x, fval, exitFlag, output] = performOptimization(params, options, lb, 
     end
 end
 
+function [state, options, optchanged] = saveCheckpoint(options, state, flag, checkpointFile)
+    optchanged = false;
+    if strcmp(flag, 'iter')
+        checkpoint.population = state.Population;
+        checkpoint.score = state.Score;
+        checkpoint.generation = state.Generation;
+        save(checkpointFile, 'checkpoint');
+        fprintf('Saved checkpoint at generation %d\n', state.Generation);
+    end
+end
+
 function [precision, recall] = evaluateParams(optParams, userParams, groundTruthData)
 % Get current date and time
-currentDateTime = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+currentDateTime = string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 
 fprintf('%s - Running parameters: %s\n', currentDateTime, sprintf('%.4f ', optParams));
 
@@ -211,7 +271,8 @@ try
         'PIPELINE_LENGTH', optParams(10), 'PIPELINE_SIZE', optParams(11), ...
         'H', optParams(12), 'MAX_NITER_PARAM', optParams(13), ...
         'GAMMA1_PARAM', optParams(14), 'GAMMA2_PARAM', optParams(15), ...
-        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false);
+        'FRAME_RATE', userParams.FrameRate, 'IMAGE_SEQUENCE', userParams.InputPath, 'DEBUG', false, ...
+        'USE_PARALLEL_LRMC', userParams.UseParallelBaboonMMB, 'NUM_WORKERS', userParams.NumWorkers);
 catch e
     % If baboon_mmb crashes, log the error and return a score of 0
     fprintf('%s - Error in baboon_mmb: %s\n', currentDateTime, e.message);
@@ -344,15 +405,13 @@ hash = sprintf('%02x', typecast(md.digest(), 'uint8'));
 end
 
 function [areaMu, areaStd, aspectRatioMu, aspectRatioStd, areaMin, areaMax, aspectRatioMin, aspectRatioMax] = analyzeGroundTruth(groundTruthData)
-    areas = [];
-    aspectRatios = [];
+    n = numel(groundTruthData);
+    areas = zeros(1, n);
+    aspectRatios = zeros(1, n);
     
-    for i = 1:numel(groundTruthData)
-        area = groundTruthData(i).width * groundTruthData(i).height;
-        aspectRatio = max(groundTruthData(i).width, groundTruthData(i).height) / min(groundTruthData(i).width, groundTruthData(i).height);
-        
-        areas = [areas, area];
-        aspectRatios = [aspectRatios, aspectRatio];
+    for i = 1:n
+        areas(i) = groundTruthData(i).width * groundTruthData(i).height;
+        aspectRatios(i) = max(groundTruthData(i).width, groundTruthData(i).height) / min(groundTruthData(i).width, groundTruthData(i).height);
     end
     
     % Calculate statistics

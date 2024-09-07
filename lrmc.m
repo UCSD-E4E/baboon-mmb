@@ -1,4 +1,4 @@
-function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, FRAME_RATE, grayFrames)
+function output = lrmc(L, KERNEL, MAX_NITER_PARAM, GAMMA1_PARAM, GAMMA2_PARAM, FRAME_RATE, grayFrames, USE_PARALLEL_LRMC, NUM_WORKERS)
 % fprintf('Processing frames using LRMC...\n');
 numFrames = numel(grayFrames);
 N = max(1, min(floor(numFrames / (L * FRAME_RATE)), numFrames));  % Ensure N is at least 1
@@ -6,34 +6,81 @@ N = max(1, min(floor(numFrames / (L * FRAME_RATE)), numFrames));  % Ensure N is 
 output = cell(1, numFrames);  % Preallocate output cell array
 se = strel('disk', double(max(1, floor(KERNEL/2))));
 
-% Broadcast grayFrames to workers
-grayFrames = parallel.pool.Constant(grayFrames);
+if USE_PARALLEL_LRMC
+    % Respawn workers
+    delete(gcp('nocreate'));
+    parpool('local', NUM_WORKERS);
 
-parfor frameIdx = 1:numFrames
-    imArray = [];
+    % Use the specified number of workers
+    numWorkers = NUM_WORKERS;
+    chunkSize = ceil(numFrames / numWorkers);
     
-    % Collect frames
-    for j = 1:N
-        idx = frameIdx + j - 1;
-        if idx > numFrames
-            break;  % If the index is out of bounds, break the loop
+    parforOutput = cell(1, numWorkers);
+    
+    parfor workerIdx = 1:numWorkers
+        startIdx = (workerIdx - 1) * chunkSize + 1;
+        endIdx = min(workerIdx * chunkSize, numFrames);
+        workerOutput = cell(1, endIdx - startIdx + 1);
+        
+        for frameIdx = startIdx:endIdx
+            imArray = [];
+            
+            % Collect frames
+            for j = 1:N
+                idx = frameIdx + j - 1;
+                if idx > numFrames
+                    break;
+                end
+                imArray(:, :, j) = grayFrames{idx};
+            end
+            
+            % Check if imArray is empty or has fewer than 2 frames
+            if isempty(imArray) || size(imArray, 3) < 2
+                workerOutput{frameIdx - startIdx + 1} = zeros(size(imArray(:, :, 1)), 'uint8');
+                continue;
+            end
+            
+            % Surpress warnings
+            warnState = warning('off', 'all');
+            
+            % Process the frame and save the mask
+            workerOutput{frameIdx - startIdx + 1} = processFrame(imArray, GAMMA1_PARAM, GAMMA2_PARAM, MAX_NITER_PARAM, se);
+            
+            warning(warnState);
         end
-        imArray(:, :, j) = grayFrames.Value{idx};
+        
+        parforOutput{workerIdx} = workerOutput;
     end
     
-    % Check if imArray is empty or has fewer than 2 frames
-    if isempty(imArray) || size(imArray, 3) < 2
-        output{frameIdx} = zeros(size(imArray(:, :, 1)), 'uint8');
-        continue;
+    % Combine results after parfor loop
+    output = [parforOutput{:}];
+else
+    for frameIdx = 1:numFrames
+        imArray = [];
+        
+        % Collect frames
+        for j = 1:N
+            idx = frameIdx + j - 1;
+            if idx > numFrames
+                break;  % If the index is out of bounds, break the loop
+            end
+            imArray(:, :, j) = grayFrames{idx};
+        end
+        
+        % Check if imArray is empty or has fewer than 2 frames
+        if isempty(imArray) || size(imArray, 3) < 2
+            output{frameIdx} = zeros(size(imArray(:, :, 1)), 'uint8');
+            continue;
+        end
+        
+        % Surpress warnings
+        warnState = warning('off', 'all');
+        
+        % Process the frame and save the mask
+        output{frameIdx} = processFrame(imArray, GAMMA1_PARAM, GAMMA2_PARAM, MAX_NITER_PARAM, se);
+        
+        warning(warnState);
     end
-    
-    % Surpress warnings
-    warnState = warning('off', 'all');
-    
-    % Process the frame and save the mask
-    output{frameIdx} = processFrame(imArray, GAMMA1_PARAM, GAMMA2_PARAM, MAX_NITER_PARAM, se);
-    
-    warning(warnState);
 end
 end
 
