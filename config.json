@@ -89,6 +89,5 @@
   "ParetoFraction": "0.7",
   "Display": "iter",
   "NumWorkers": "3",
-  "UseParallelBaboonMMB": "true",
-  "MaxStallTime": "21600"
+  "UseParallelBaboonMMB": "true"
 }
