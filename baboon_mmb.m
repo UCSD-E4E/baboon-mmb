@@ -20,6 +20,8 @@ addParameter(p, 'GAMMA2_PARAM', 0.8, @(x) isnumeric(x) && x >= 0 && x <= 1);
 addParameter(p, 'FRAME_RATE', 10, @(x) isnumeric(x) && x >= 1);
 addParameter(p, 'IMAGE_SEQUENCE', '', @(x) ischar(x) || isstring(x));
 addParameter(p, 'DEBUG', true, @(x) islogical(x));
+addParameter(p, 'USE_PARALLEL_LRMC', false, @(x) islogical(x));
+addParameter(p, 'NUM_WORKERS', 3, @(x) isnumeric(x) && x >= 1);
 
 parse(p, varargin{:});
 args = p.Results;
@@ -143,7 +145,7 @@ if ~any(cellfun(@(x) any(x(:)), amfdMasks)) && ~args.BITWISE_OR
     return;
 end
 
-lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames);
+lrmcMasks = lrmc(args.L, args.KERNEL, args.MAX_NITER_PARAM, args.GAMMA1_PARAM, args.GAMMA2_PARAM, args.FRAME_RATE, grayFrames, args.USE_PARALLEL_LRMC, args.NUM_WORKERS);
 if args.DEBUG
     saveMasks(lrmcMasks, 'output/lrmc');
     save('output/lrmcMasks.mat', 'lrmcMasks');
