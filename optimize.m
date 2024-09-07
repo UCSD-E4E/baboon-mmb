@@ -136,7 +136,6 @@ params.ParetoFraction = str2double(config.ParetoFraction);
 params.Display = config.Display;
 params.NumWorkers = str2double(config.NumWorkers);
 params.UseParallelBaboonMMB = strcmpi(config.UseParallelBaboonMMB, 'true');
-params.MaxStallTime = str2double(config.MaxStallTime);
 end
 
 function options = configureOptions(params, mu, std, lb, ub, intIndices, initialPopulation, initialScore)
@@ -168,8 +167,7 @@ if ~isempty(initialPopulation)
         'ParetoFraction', params.ParetoFraction, ...
         'Display', params.Display, ...
         'InitialPopulationMatrix', initialPopulation, ...
-        'InitialScoresMatrix', initialScore, ...
-        'MaxStallTime', params.MaxStallTime);  % Use the configured MaxStallTime
+        'InitialScoresMatrix', initialScore);
 else
     % Initialize the population matrix
     populationSize = params.PopulationSize;
@@ -205,8 +203,7 @@ else
         'UseParallel', params.UseParallel, ...
         'ParetoFraction', params.ParetoFraction, ...
         'Display', params.Display, ...
-        'InitialPopulationMatrix', initialPopulation, ...
-        'MaxStallTime', params.MaxStallTime);  % Use the configured MaxStallTime
+        'InitialPopulationMatrix', initialPopulation);
 end
 
 % Add output function for checkpointing
